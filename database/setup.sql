@@ -32,15 +32,18 @@ create table volunteers (
   id           bigint generated always as identity primary key,
   user_id      uuid unique references auth.users (id) on delete set null, -- their sign-in
   name         text not null,
-  email        text not null unique
-               check (email = lower(email) and email like '%_@ucalgary.ca'),
+  email        text not null unique check (email = lower(email)),
   status       text not null default 'active'
                check (status in ('active', 'inactive')),
   program_year text not null                        -- for example 2026-2027
                check (program_year ~ '^[0-9]{4}-[0-9]{4}$'),
   role         text not null default 'volunteer'
                check (role in ('volunteer', 'coordinator')),
-  approved     boolean not null default false
+  approved     boolean not null default false,
+  -- Volunteers must use a UCalgary address. Only the coordinator account
+  -- (the shared office mailbox) may use a different one.
+  constraint volunteers_email_domain_check
+    check (email like '%_@ucalgary.ca' or role = 'coordinator')
 );
 
 create table announcements (
@@ -166,7 +169,11 @@ alter table handover_notes alter column written_by set default my_volunteer_id()
 create function handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if lower(new.email) not like '%_@ucalgary.ca' then
+  -- The one exception: an address already listed in volunteers as a coordinator
+  -- (the shared office mailbox, added from the Supabase dashboard).
+  if lower(new.email) not like '%_@ucalgary.ca' and not exists (
+       select 1 from volunteers
+       where email = lower(new.email) and role = 'coordinator' and user_id is null) then
     raise exception 'Only @ucalgary.ca email addresses can sign up.';
   end if;
 

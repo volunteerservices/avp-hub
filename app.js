@@ -262,7 +262,8 @@ async function request(url, method, body, token) {
   let data = null;
   try { data = await res.json(); } catch (e) { /* empty answer */ }
   if (!res.ok) {
-    const err = new Error(res.status >= 500 ? PAUSED_HELP : friendly(data, res.status));
+    const refused = data && data.code === "P0001";   // the database said no, with a reason
+    const err = new Error(res.status >= 500 && !refused ? PAUSED_HELP : friendly(data, res.status));
     err.status = res.status;
     throw err;
   }
@@ -369,7 +370,9 @@ function renderSignIn(mode, message) {
     e.preventDefault();
     const address = email.value.trim().toLowerCase();
     note.className = "error";
-    if (mode !== "signin" && !address.endsWith("@ucalgary.ca")) {
+    // Volunteers need a UCalgary address. The database also checks this, and
+    // allows the one shared coordinator mailbox (ending in @su.ucalgary.ca).
+    if (mode !== "signin" && !address.endsWith("@ucalgary.ca") && !address.endsWith("@su.ucalgary.ca")) {
       note.textContent = "Please use your @ucalgary.ca email address.";
       return;
     }
