@@ -419,10 +419,36 @@ async function start() {
   }
 
   // Arriving from a link in a confirmation or reset email.
+  // The link only works once the person presses a button here. University email
+  // scanners open every link in a message, and would otherwise use it up first.
+  const emailLink = new URLSearchParams(location.search);
+  if (emailLink.get("token_hash")) {
+    const reset = emailLink.get("type") === "recovery";
+    const note = el("p", { className: "error" });
+    const button = el("button", { className: "primary" }, reset ? "Continue" : "Confirm my email");
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        setSession(await auth("POST", "verify",
+          { type: emailLink.get("type"), token_hash: emailLink.get("token_hash") }));
+        history.replaceState(null, "", location.pathname);
+        return reset ? renderNewPassword() : start();
+      } catch (err) {
+        note.textContent = "That link was already used or has expired. If you confirmed your email before, just sign in.";
+        button.replaceWith(el("button", { onclick: () => { history.replaceState(null, "", location.pathname); renderSignIn(); } }, "Go to sign in"));
+      }
+    };
+    return signedOutScreen(
+      el("h2", {}, reset ? "Reset your password" : "Confirm your email"),
+      el("p", {}, reset ? "Press Continue to choose a new password." : "Press the button to finish creating your AVP Hub account."),
+      el("div", { className: "row" }, button), note);
+  }
+
   const link = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
   if (link.get("access_token") || link.get("error_description")) {
     history.replaceState(null, "", location.pathname);
-    if (link.get("error_description")) return renderSignIn("signin", link.get("error_description"));
+    if (link.get("error_description"))
+      return renderSignIn("signin", "That link was already used or has expired. If you confirmed your email before, just sign in.");
     setSession({
       access_token: link.get("access_token"),
       refresh_token: link.get("refresh_token"),
