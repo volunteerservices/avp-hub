@@ -38,13 +38,27 @@ Keep their passwords in the office's usual password storage, not in AVP Hub.
   prove the person owns that address. Approve a sign-up only when that volunteer has
   told you they signed up.
 
+## One program year at a time (the yearly hold)
+
+Each volunteer has a program year, for example 2026-2027.
+
+- **On June 1 every year**, volunteers from the year that just ended are put **on hold**
+  automatically. Their sign-in is kept, but they cannot get in or see anything.
+- **If someone is returning:** Volunteers page > their row > **Returning for (this year)**.
+  They can sign in again with the same email and password.
+- **Sign-ins are kept for 3 years** after the program year ends. After that the row
+  shows "Past the 3-year limit" and a button appears at the top of the Volunteers page:
+  **Delete N past the 3-year limit**. Click it once a year. Nothing is deleted on its own.
+- The coordinator account is never put on hold.
+
 ## Yearly handover checklist
 
 1. The new coordinator creates an account on the site and is approved.
 2. The outgoing coordinator opens Volunteers > Edit on the new coordinator > Role: coordinator.
 3. The new coordinator sets the outgoing coordinator's Role to volunteer (or Status to inactive).
 4. Hand over access to the shared mailbox and the GitHub and Supabase passwords.
-5. Set last year's volunteers to inactive.
+5. After June 1: mark returning volunteers as returning, and click
+   "Delete N past the 3-year limit" if it appears.
 6. Download a backup (see below).
 
 ## Summer: the database can pause

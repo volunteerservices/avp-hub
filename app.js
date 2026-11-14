@@ -26,7 +26,23 @@ const isCoordinator = () => me && me.role === "coordinator";
 const today = () => new Date().toLocaleDateString("en-CA");          // 2026-11-14
 function schoolYear() {                                              // 2026-2027
   const d = new Date(), y = d.getFullYear();
-  return d.getMonth() >= 6 ? y + "-" + (y + 1) : (y - 1) + "-" + y;
+  return d.getMonth() >= 5 ? y + "-" + (y + 1) : (y - 1) + "-" + y;   // new year starts June 1
+}
+
+// Volunteers serve one program year. On June 1 a volunteer whose program year has
+// ended is put ON HOLD: their sign-in is kept but they can't get in until the
+// coordinator marks them as returning. Sign-ins are kept for KEEP_YEARS after that.
+const KEEP_YEARS = 3;
+const firstYear = text => Number(String(text).slice(0, 4));
+const onHold = row => row.role !== "coordinator" && row.program_year < schoolYear();
+const pastLimit = row => row.role !== "coordinator" &&
+  firstYear(row.program_year) + 1 + KEEP_YEARS <= firstYear(schoolYear());
+function accessOf(row) {
+  if (!row.approved) return "Waiting for approval";
+  if (row.status !== "active") return "Inactive";
+  if (pastLimit(row)) return "Past the " + KEEP_YEARS + "-year limit";
+  if (onHold(row)) return "On hold (year ended)";
+  return "Can sign in";
 }
 
 // =====================================================================
@@ -151,9 +167,25 @@ const PAGES = {
     title: "Volunteers", singular: "volunteer",
     lede: "Everyone with an AVP Hub account. New sign-ups wait here until the coordinator approves them.",
     table: "volunteers", order: "approved.asc,name.asc", filters: [{ field: "program_year" }],
-    flag: row => !row.approved,
+    flag: row => !row.approved || pastLimit(row),
     canDelete: row => isCoordinator() && row.id !== me.id,
-    actions: row => row.approved ? [] : [{ label: "Approve", patch: { approved: true } }],
+    actions: row => {
+      const list = [];
+      if (!row.approved) list.push({ label: "Approve", patch: { approved: true } });
+      if (row.approved && onHold(row))
+        list.push({ label: "Returning for " + schoolYear(), patch: { program_year: schoolYear(), status: "active" } });
+      return list;
+    },
+    // One button to remove everyone whose sign-in has been kept past the limit.
+    extra: rows => {
+      const old = rows.filter(pastLimit);
+      return old.length && el("button", { onclick: () => {
+        if (confirm("Delete " + old.length + " volunteer account(s) that ended more than " + KEEP_YEARS +
+            " years ago?\n\n" + old.map(r => r.name + " (" + r.program_year + ")").join("\n") +
+            "\n\nThis removes their sign-in and cannot be undone."))
+          change(() => api("DELETE", "volunteers?id=in.(" + old.map(r => r.id).join(",") + ")"));
+      } }, "Delete " + old.length + " past the " + KEEP_YEARS + "-year limit");
+    },
     check: (values, row) =>
       row && row.id === me.id &&
       (values.role !== "coordinator" || values.status !== "active" || !values.approved)
@@ -166,6 +198,7 @@ const PAGES = {
       { name: "program_year", label: "Program year", type: "text", required: true, initial: schoolYear },
       { name: "role", label: "Role", type: "choice", options: ["volunteer", "coordinator"] },
       { name: "approved", label: "Approved", type: "yesno" },
+      { name: "access", label: "Access", readOnly: true, compute: accessOf },
     ],
   },
 };
@@ -241,7 +274,7 @@ function friendly(data, status) {
   if (data.code === "42501") return "You don't have permission to do that.";
   if (data.code === "23505") return "That already exists (for example, the same email twice).";
   if (data.code === "23503") return "That is still used somewhere else, so it can't be removed.";
-  if (data.code === "23514") return "One of the values isn't allowed. Emails must end in @ucalgary.ca.";
+  if (data.code === "23514") return "One of the values isn't allowed. Emails must end in @ucalgary.ca, and a program year looks like 2026-2027.";
   return data.msg || data.error_description || data.message || "Something went wrong (error " + status + ").";
 }
 
@@ -394,7 +427,9 @@ function renderNewPassword() {
 function renderWaiting() {
   const text = !me || !me.approved
     ? "Your account is waiting for the coordinator's approval. Check back after they let you know."
-    : "Your account is inactive. Please contact the coordinator.";
+    : me.status !== "active"
+      ? "Your account is inactive. Please contact the coordinator."
+      : "Your program year (" + me.program_year + ") has ended, so your account is on hold. If you are returning this year, ask the coordinator to turn it back on.";
   signedOutScreen(
     el("h2", {}, "Almost there"), el("p", {}, text),
     el("div", { className: "row" },
@@ -461,7 +496,7 @@ async function start() {
 
   try {
     me = (await api("GET", "volunteers?select=*&user_id=eq." + userId()))[0] || null;
-    if (!me || !me.approved || me.status !== "active") return renderWaiting();
+    if (!me || !me.approved || me.status !== "active" || onHold(me)) return renderWaiting();
     await loadLookups();
   } catch (err) {
     if (!session) return renderSignIn("signin", err.message);
@@ -548,6 +583,8 @@ async function drawPage(key, def) {
     if (chosen) rows = rows.filter(row => String(row[filter.field]) === chosen);
   }
 
+  const extra = def.extra && def.extra(rows);
+  if (extra) toolbar.append(extra);
   return [toolbar, drawRows(def, rows)];
 }
 
@@ -621,6 +658,7 @@ function chip(code) {
 
 // One value, ready to display.
 function show(field, row) {
+  if (field.compute) return field.compute(row);
   const value = row[field.name];
   if (field.type === "yesno") return value ? "Yes" : "No";
   if (value === null || value === undefined || value === "") return "—";

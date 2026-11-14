@@ -36,7 +36,8 @@ create table volunteers (
                check (email = lower(email) and email like '%_@ucalgary.ca'),
   status       text not null default 'active'
                check (status in ('active', 'inactive')),
-  program_year text not null,                       -- for example 2026-2027
+  program_year text not null                        -- for example 2026-2027
+               check (program_year ~ '^[0-9]{4}-[0-9]{4}$'),
   role         text not null default 'volunteer'
                check (role in ('volunteer', 'coordinator')),
   approved     boolean not null default false
@@ -113,17 +114,30 @@ create table guides (
 -- 2. "WHO IS ASKING?" HELPERS
 -- ---------------------------------------------------------------
 
--- The signed-in person is an approved, active volunteer or coordinator.
-create function is_member() returns boolean
+-- School year for today's date. A new year starts on June 1.
+create or replace function current_school_year() returns text
+language sql stable as $$
+  select case when extract(month from current_date) >= 6
+    then extract(year from current_date)::int || '-' || (extract(year from current_date)::int + 1)
+    else (extract(year from current_date)::int - 1) || '-' || extract(year from current_date)::int
+  end;
+$$;
+
+-- The signed-in person may use AVP Hub: approved, active, and either the
+-- coordinator or a volunteer whose program year has not ended. On June 1 a
+-- volunteer from the year that just ended is ON HOLD until the coordinator
+-- sets their program year to the new year.
+create or replace function is_member() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from volunteers
     where user_id = auth.uid() and approved and status = 'active'
+      and (role = 'coordinator' or program_year >= current_school_year())
   );
 $$;
 
 -- The signed-in person is an approved, active coordinator.
-create function is_coordinator() returns boolean
+create or replace function is_coordinator() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from volunteers
@@ -132,20 +146,12 @@ language sql stable security definer set search_path = public as $$
   );
 $$;
 
--- The volunteers.id of the signed-in person (empty if not a member).
-create function my_volunteer_id() returns bigint
+-- The volunteers.id of the signed-in person (empty if they may not use AVP Hub).
+create or replace function my_volunteer_id() returns bigint
 language sql stable security definer set search_path = public as $$
   select id from volunteers
-  where user_id = auth.uid() and approved and status = 'active';
-$$;
-
--- School year for today's date. A new year starts on July 1.
-create function current_school_year() returns text
-language sql stable as $$
-  select case when extract(month from current_date) >= 7
-    then extract(year from current_date)::int || '-' || (extract(year from current_date)::int + 1)
-    else (extract(year from current_date)::int - 1) || '-' || extract(year from current_date)::int
-  end;
+  where user_id = auth.uid() and approved and status = 'active'
+    and (role = 'coordinator' or program_year >= current_school_year());
 $$;
 
 alter table handover_notes alter column written_by set default my_volunteer_id();
