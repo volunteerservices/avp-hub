@@ -31,6 +31,13 @@ Keep their passwords in the office's usual password storage, not in AVP Hub.
 - Volunteers can only sign up with an @ucalgary.ca email and must click a confirmation
   link. The free plan sends only a few of these emails per hour, so spread sign-ups out.
 
+- **"That link was already used or has expired":** UCalgary's email system opens links
+  before the person does, which uses up the confirmation link. The account is still
+  confirmed, so the volunteer just signs in with their password.
+- **Only approve people you expect.** Because of the above, a confirmed email does not
+  prove the person owns that address. Approve a sign-up only when that volunteer has
+  told you they signed up.
+
 ## Yearly handover checklist
 
 1. The new coordinator creates an account on the site and is approved.
