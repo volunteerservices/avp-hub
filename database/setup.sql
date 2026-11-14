@@ -1,0 +1,312 @@
+-- AVP Hub database setup
+-- Run this ONCE in a new Supabase project (SQL Editor > paste > Run).
+-- It creates the tables, the sign-up link to volunteers, and the rules
+-- about who may read and change what.
+
+-- ---------------------------------------------------------------
+-- 1. TABLES
+-- ---------------------------------------------------------------
+
+create table programs (
+  code          text primary key,
+  name          text not null,
+  calendar_only boolean not null default false  -- true = offered on the Calendar only,
+);                                              -- not for tasks or guides
+
+insert into programs (code, name, calendar_only) values
+  ('AVP',  'Administrative Volunteer Program',   false),
+  ('CFB',  'Campus Food Bank',                   false),
+  ('ICLF', 'Information Centre / Lost & Found',  false),
+  ('VTP',  'Volunteer Tax Program',              false),
+  ('Q',    'Q Centre',                           false),
+  ('SSP',  'Student Support Program',            false),
+  ('RSP',  'Refugee Student Program',            false),
+  ('VS',   'Volunteer Services (all programs)',  true),
+  ('CVS',  'Coordinator, Volunteer Services',    true),
+  ('SU',   'Students'' Union',                   true),
+  ('University', 'University dates',             true),
+  ('C10K', 'Committee of 10,000',                true),
+  ('Pride Scholarship', 'Pride Scholarship',     true);
+
+create table volunteers (
+  id           bigint generated always as identity primary key,
+  user_id      uuid unique references auth.users (id) on delete set null, -- their sign-in
+  name         text not null,
+  email        text not null unique
+               check (email = lower(email) and email like '%_@ucalgary.ca'),
+  status       text not null default 'active'
+               check (status in ('active', 'inactive')),
+  program_year text not null,                       -- for example 2026-2027
+  role         text not null default 'volunteer'
+               check (role in ('volunteer', 'coordinator')),
+  approved     boolean not null default false
+);
+
+create table announcements (
+  id      bigint generated always as identity primary key,
+  message text not null,
+  date    date not null default current_date,
+  pinned  boolean not null default false
+);
+
+create table handover_notes (
+  id            bigint generated always as identity primary key,
+  finished      text not null,
+  left_for_next text not null default '',
+  urgent        boolean not null default false,
+  resolved      boolean not null default false,
+  written_by    bigint references volunteers (id) on delete set null,
+  written_at    timestamptz not null default now()
+);
+
+create table tasks (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  program    text not null references programs (code) on update cascade,
+  type       text not null default 'regular'
+             check (type in ('regular', 'downtime project')),
+  status     text not null default 'to do'
+             check (status in ('to do', 'in progress', 'done')),
+  claimed_by bigint references volunteers (id) on delete set null
+);
+
+create table calendar_dates (
+  id           bigint generated always as identity primary key,
+  program      text not null references programs (code) on update cascade,
+  what_happens text not null,
+  date         date,                                -- empty while the date is still "TBD"
+  notes        text not null default '',
+  school_year  text not null                        -- for example 2025-2026
+);
+
+create table events (
+  id       bigint generated always as identity primary key,
+  name     text not null,
+  date     date,
+  location text not null default ''
+);
+
+create table event_tasks (
+  id       bigint generated always as identity primary key,
+  event_id bigint not null references events (id) on delete cascade,
+  title    text not null,
+  due_date date,
+  done     boolean not null default false
+);
+
+create table organizations (
+  id    bigint generated always as identity primary key,
+  name  text not null,
+  type  text not null check (type in ('fair partner', 'sponsor')),
+  year  integer not null,
+  notes text not null default ''
+);
+
+create table guides (
+  id      bigint generated always as identity primary key,
+  title   text not null,
+  program text not null references programs (code) on update cascade,
+  steps   text not null                             -- one step per line
+);
+
+-- ---------------------------------------------------------------
+-- 2. "WHO IS ASKING?" HELPERS
+-- ---------------------------------------------------------------
+
+-- The signed-in person is an approved, active volunteer or coordinator.
+create function is_member() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from volunteers
+    where user_id = auth.uid() and approved and status = 'active'
+  );
+$$;
+
+-- The signed-in person is an approved, active coordinator.
+create function is_coordinator() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from volunteers
+    where user_id = auth.uid() and approved and status = 'active'
+      and role = 'coordinator'
+  );
+$$;
+
+-- The volunteers.id of the signed-in person (empty if not a member).
+create function my_volunteer_id() returns bigint
+language sql stable security definer set search_path = public as $$
+  select id from volunteers
+  where user_id = auth.uid() and approved and status = 'active';
+$$;
+
+-- School year for today's date. A new year starts on July 1.
+create function current_school_year() returns text
+language sql stable as $$
+  select case when extract(month from current_date) >= 7
+    then extract(year from current_date)::int || '-' || (extract(year from current_date)::int + 1)
+    else (extract(year from current_date)::int - 1) || '-' || extract(year from current_date)::int
+  end;
+$$;
+
+alter table handover_notes alter column written_by set default my_volunteer_id();
+
+-- ---------------------------------------------------------------
+-- 3. SIGN-UP: connect a new sign-in to the volunteers table
+-- ---------------------------------------------------------------
+
+-- When someone signs up: refuse non-UCalgary emails, then either connect
+-- them to the row the coordinator already added for that email, or create
+-- a new row that waits for approval.
+create function handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if lower(new.email) not like '%_@ucalgary.ca' then
+    raise exception 'Only @ucalgary.ca email addresses can sign up.';
+  end if;
+
+  update volunteers set user_id = new.id
+  where email = lower(new.email) and user_id is null;
+
+  if not found then
+    insert into volunteers (user_id, name, email, program_year)
+    values (
+      new.id,
+      coalesce(nullif(trim(new.raw_user_meta_data ->> 'name'), ''),
+               split_part(new.email, '@', 1)),
+      lower(new.email),
+      current_school_year()
+    );
+  end if;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function handle_new_user();
+
+-- Deleting a volunteer also deletes their sign-in.
+create function remove_login() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.user_id is not null then
+    delete from auth.users where id = old.user_id;
+  end if;
+  return old;
+end;
+$$;
+
+create trigger on_volunteer_deleted
+  after delete on volunteers
+  for each row execute function remove_login();
+
+-- ---------------------------------------------------------------
+-- 4. LIMITS ON WHAT VOLUNTEERS MAY CHANGE
+--    (These do not apply to the coordinator, or to edits made
+--     directly in the Supabase dashboard.)
+-- ---------------------------------------------------------------
+
+-- Tasks: a volunteer may only change the status and who claimed it.
+create function guard_task_update() returns trigger
+language plpgsql as $$
+begin
+  if auth.uid() is not null and not is_coordinator() then
+    new.title   := old.title;
+    new.program := old.program;
+    new.type    := old.type;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger guard_task_update
+  before update on tasks
+  for each row execute function guard_task_update();
+
+-- Handover notes: a volunteer may edit their own note. On someone
+-- else's note they may only change "resolved".
+create function guard_note_update() returns trigger
+language plpgsql as $$
+begin
+  if auth.uid() is not null and not is_coordinator() then
+    new.written_by := old.written_by;
+    new.written_at := old.written_at;
+    if old.written_by is distinct from my_volunteer_id() then
+      new.finished      := old.finished;
+      new.left_for_next := old.left_for_next;
+      new.urgent        := old.urgent;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger guard_note_update
+  before update on handover_notes
+  for each row execute function guard_note_update();
+
+-- ---------------------------------------------------------------
+-- 5. ACCESS RULES (row level security)
+--    Nobody sees anything unless a rule below allows it.
+-- ---------------------------------------------------------------
+
+-- Tables every member can read and only the coordinator can change.
+do $$
+declare t text;
+begin
+  foreach t in array array['programs', 'announcements', 'calendar_dates',
+                           'events', 'event_tasks', 'organizations', 'guides']
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('create policy "members read" on %I for select to authenticated using (is_member())', t);
+    execute format('create policy "coordinator changes" on %I for all to authenticated using (is_coordinator()) with check (is_coordinator())', t);
+  end loop;
+end;
+$$;
+
+-- Volunteers: the coordinator sees and changes everything.
+-- Everyone else sees only their own row (to check if they are approved).
+alter table volunteers enable row level security;
+create policy "own row or coordinator read" on volunteers for select to authenticated
+  using (user_id = (select auth.uid()) or is_coordinator());
+create policy "coordinator changes" on volunteers for all to authenticated
+  using (is_coordinator()) with check (is_coordinator());
+
+-- Names only (no emails) for members, used to show who wrote or claimed something.
+create view volunteer_names as
+  select id, name, status, program_year from volunteers where is_member();
+
+-- Handover notes: members read and write; see the limits in section 4.
+alter table handover_notes enable row level security;
+create policy "members read" on handover_notes for select to authenticated
+  using (is_member());
+create policy "members write their own" on handover_notes for insert to authenticated
+  with check (is_member() and written_by = my_volunteer_id());
+create policy "members update" on handover_notes for update to authenticated
+  using (is_member()) with check (is_member());
+create policy "coordinator deletes" on handover_notes for delete to authenticated
+  using (is_coordinator());
+
+-- Tasks: members read. A volunteer may update a task that is unclaimed or
+-- theirs, and may only leave it unclaimed or theirs; see section 4.
+alter table tasks enable row level security;
+create policy "members read" on tasks for select to authenticated
+  using (is_member());
+create policy "coordinator changes" on tasks for all to authenticated
+  using (is_coordinator()) with check (is_coordinator());
+create policy "volunteers claim and complete" on tasks for update to authenticated
+  using (is_member() and (claimed_by is null or claimed_by = my_volunteer_id()))
+  with check (is_member() and (claimed_by is null or claimed_by = my_volunteer_id()));
+
+-- ---------------------------------------------------------------
+-- 6. PERMISSIONS: signed-in people only, never the public
+-- ---------------------------------------------------------------
+
+revoke all on all tables in schema public from anon, public;
+revoke execute on all functions in schema public from anon, public;
+
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke insert, update, delete on volunteer_names from authenticated;
+grant execute on function is_member(), is_coordinator(), my_volunteer_id()
+  to authenticated;

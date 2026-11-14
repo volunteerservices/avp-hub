@@ -1,0 +1,27 @@
+# Visits the AVP Hub database twice a week so the free plan does not pause it.
+# GitHub switches this off after about 60 days with no changes to the site
+# files. If that happens: GitHub > Actions tab > "Keep database awake" > Enable.
+
+name: Keep database awake
+
+on:
+  schedule:
+    - cron: "17 9 * * 1,4"   # Mondays and Thursdays
+  workflow_dispatch:          # also allows running it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  visit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Visit the database
+        run: |
+          URL=$(grep -oP 'SUPABASE_URL\s*=\s*"\K[^"]+' config.js)
+          KEY=$(grep -oP 'SUPABASE_KEY\s*=\s*"\K[^"]+' config.js)
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "$URL/rest/v1/programs?select=code&limit=1" -H "apikey: $KEY")
+          echo "Database answered with status $STATUS"
+          # 401 or 403 is expected (this visit is not signed in). 5xx means paused or down.
+          if [ "$STATUS" -ge 500 ] || [ "$STATUS" = "000" ]; then exit 1; fi
