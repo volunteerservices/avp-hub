@@ -51,12 +51,23 @@ Each volunteer has a program year, for example 2026-2027.
   **Delete N past the 3-year limit**. Click it once a year. Nothing is deleted on its own.
 - The coordinator account is never put on hold.
 
+## The coordinator account
+
+There is one shared coordinator account, signed in with the office mailbox
+`volunteer@su.ucalgary.ca`. Every coordinator uses it; it is handed over each year.
+Volunteers sign up for their own accounts and can never become coordinators by signing up.
+
+- Notes written from this account show "Coordinator" as the author.
+- Its password is kept in the office's password storage, never in AVP Hub.
+- It is the only account allowed to use an address that does not end in @ucalgary.ca.
+
 ## Yearly handover checklist
 
-1. The new coordinator creates an account on the site and is approved.
-2. The outgoing coordinator opens Volunteers > Edit on the new coordinator > Role: coordinator.
-3. The new coordinator sets the outgoing coordinator's Role to volunteer (or Status to inactive).
-4. Hand over access to the shared mailbox and the GitHub and Supabase passwords.
+1. Hand over access to the shared mailbox and the AVP Hub coordinator password.
+2. The new coordinator signs in to AVP Hub, then changes the password:
+   sign out > "Forgot your password?" > follow the email sent to the shared mailbox.
+3. Save the new password in the office's password storage.
+4. Hand over the GitHub and Supabase passwords too.
 5. After June 1: mark returning volunteers as returning, and click
    "Delete N past the 3-year limit" if it appears.
 6. Download a backup (see below).
@@ -84,9 +95,11 @@ office shared drive.
 
 - **Add or rename a program:** Supabase > Table Editor > programs. Set `calendar_only`
   to `true` for labels that are only used on the Calendar (like "University").
-- **The very first coordinator** (or if every coordinator is locked out):
-  Supabase > Table Editor > volunteers > set that person's role to `coordinator`
-  and approved to `true`.
+- **If the coordinator account is lost or locked out:** Supabase > Table Editor >
+  volunteers > check the "Coordinator" row has role `coordinator`, approved `true`
+  and status `active`. If the password is lost and the reset email does not work,
+  delete that row, add it again with the same email and role `coordinator`, then
+  sign up on the site with that email to set a new password.
 
 ## If something needs rebuilding
 
