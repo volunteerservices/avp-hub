@@ -153,6 +153,8 @@ const PAGES = {
 
   partners: {
     title: "Partners and sponsors", singular: "organization",
+    canAdd: () => true,      // volunteers may add and correct organizations,
+    canEdit: () => true,     // but only the coordinator may delete them
     lede: "Volunteer Fair partner organizations and Appreciation Party sponsors, by year. Start next year's list from these, and thank them again when you ask.",
     table: "organizations", order: "year.desc,name.asc", filters: [{ field: "year", latest: true }, { field: "type" }],
     fields: [

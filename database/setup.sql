@@ -323,3 +323,10 @@ grant select, insert, update, delete on all tables in schema public to authentic
 revoke insert, update, delete on volunteer_names from authenticated;
 grant execute on function is_member(), is_coordinator(), my_volunteer_id()
   to authenticated;
+
+-- Partners and sponsors: volunteers may also add and correct organizations.
+-- Only the coordinator may delete them (rule from section 5 above).
+create policy "members add" on organizations for insert to authenticated
+  with check (is_member());
+create policy "members correct" on organizations for update to authenticated
+  using (is_member()) with check (is_member());

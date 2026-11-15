@@ -21,6 +21,16 @@ Keep their passwords in the office's usual password storage, not in AVP Hub.
 - Never store passwords, door or lockbox codes, or volunteer performance reviews.
 - Personal information is limited to name and UCalgary email.
 
+## What volunteers can do
+
+- **Read** everything except other people's emails.
+- **Handover notes:** write notes, edit their own, mark any note resolved.
+- **Tasks:** claim a task, mark it done, release it.
+- **Partners and sponsors:** add and correct organizations, but not delete them.
+- Everything else (announcements, calendar, events, guides) is view-only for volunteers.
+
+The coordinator can add, edit and delete everything.
+
 ## Everyday jobs (all done on the site itself)
 
 - **Approve a new volunteer:** Volunteers page > their row is highlighted > Approve.
