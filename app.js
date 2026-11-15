@@ -17,10 +17,31 @@ const filters = {};   // the filter chosen on each page
 
 // Dot colour beside each program code. A code not listed here gets grey.
 const COLOURS = {
-  AVP: "#b5122f", VS: "#6b4fa0", CFB: "#2f7d4f", ICLF: "#1f6fa8", Q: "#c2410c",
+  AVP: "#15803d", VS: "#6b4fa0", CFB: "#2f7d4f", ICLF: "#1f6fa8", Q: "#c2410c",
   VTP: "#0f766e", SSP: "#a16207", RSP: "#7c3aed", CVS: "#57534e", SU: "#9f1239",
   University: "#64748b", C10K: "#4d7c0f", "Pride Scholarship": "#db2777",
 };
+
+// Small line drawings used in the navigation and on the Today page.
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6.5a8 8 0 0 1 0 11"/>',
+  clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6M9 18h3"/>',
+  check: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  book: '<path d="M5 3h13a1 1 0 0 1 1 1v16H6.5A1.5 1.5 0 0 1 5 18.5z"/><path d="M5 18.5A1.5 1.5 0 0 1 6.5 17H19"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  star: '<path d="m12 3 2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5a5 5 0 0 1 4.5 5"/>',
+  alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/>',
+  leaf: '<path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19 12 12"/>',
+  pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+};
+function icon(name) {
+  const holder = document.createElement("span");
+  holder.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + "</svg>";
+  return holder.firstChild;
+}
 
 const isCoordinator = () => me && me.role === "coordinator";
 const today = () => new Date().toLocaleDateString("en-CA");          // 2026-11-14
@@ -52,8 +73,10 @@ function accessOf(row) {
 // =====================================================================
 
 const PAGES = {
+  today: { title: "Today", group: "Day to day", icon: "home" },   // drawn by drawToday()
+
   announcements: {
-    title: "Announcements", singular: "announcement", group: "Day to day",
+    title: "Announcements", singular: "announcement", icon: "megaphone",
     lede: "Start every shift here: read the announcements, check what the last shift left for you, then pick up a task. Close your shift by writing a handover note.",
     table: "announcements", order: "pinned.desc,date.desc", layout: "cards",
     flag: row => row.pinned,
@@ -65,7 +88,7 @@ const PAGES = {
   },
 
   notes: {
-    title: "Handover notes", singular: "handover note",
+    title: "Handover notes", singular: "handover note", icon: "clipboard",
     lede: "Shifts are solo, so write a note at the end of every shift: what you finished, what's left, and whether anything is urgent. At the start of a shift, read the latest notes first. Anything urgent comes before new tasks.",
     table: "handover_notes", order: "resolved.asc,urgent.desc,written_at.desc", layout: "cards",
     reminder: true,
@@ -88,7 +111,7 @@ const PAGES = {
   },
 
   tasks: {
-    title: "Tasks", singular: "task",
+    title: "Tasks", singular: "task", icon: "check",
     lede: "Claim a task before you start so nobody doubles up. Downtime projects are longer jobs for quiet weeks, especially November to January and after the Appreciation Party.",
     table: "tasks", order: "program.asc,title.asc", filters: [{ field: "program" }, { field: "type" }],
     sort: rows => {
@@ -115,7 +138,7 @@ const PAGES = {
   },
 
   guides: {
-    title: "Front desk guides", singular: "guide",
+    title: "Front desk guides", singular: "guide", icon: "book",
     lede: "How to handle what walks up to the desk, including other programs' requests. Each guide is short on purpose; longer versions with screenshots live in the Guides & Templates folder on the shared drive.",
     table: "guides", order: "program.asc,title.asc", layout: "guides", filters: [{ field: "program" }],
     reminder: true,
@@ -127,7 +150,7 @@ const PAGES = {
   },
 
   calendar: {
-    title: "Calendar", singular: "calendar date", group: "Plan & remember",
+    title: "Calendar", singular: "calendar date", group: "Plan & remember", icon: "calendar",
     lede: "Every program's key dates from the Volunteer Services master calendar, so you can see what's coming and when other programs will need AVP's help.",
     table: "calendar_dates", order: "date.asc.nullslast",
     filters: [{ field: "school_year", latest: true }, { field: "program" }],
@@ -141,7 +164,7 @@ const PAGES = {
   },
 
   events: {
-    title: "Events", singular: "event",
+    title: "Events", singular: "event", icon: "star",
     lede: "AVP runs two signature events for all of Volunteer Services: the Volunteer Fair and the Volunteer Appreciation Party. Each has a checklist with due dates.",
     table: "events", order: "date.asc", layout: "cards",
     fields: [
@@ -152,7 +175,7 @@ const PAGES = {
   },
 
   partners: {
-    title: "Partners and sponsors", singular: "organization",
+    title: "Partners and sponsors", singular: "organization", icon: "heart",
     canAdd: () => true,      // volunteers may add and correct organizations,
     canEdit: () => true,     // but only the coordinator may delete them
     lede: "Volunteer Fair partner organizations and Appreciation Party sponsors, by year. Start next year's list from these, and thank them again when you ask.",
@@ -166,7 +189,7 @@ const PAGES = {
   },
 
   volunteers: {
-    title: "Volunteers", singular: "volunteer",
+    title: "Volunteers", singular: "volunteer", icon: "users",
     lede: "Everyone with an AVP Hub account. New sign-ups wait here until the coordinator approves them.",
     table: "volunteers", order: "approved.asc,name.asc", filters: [{ field: "program_year" }],
     flag: row => !row.approved || pastLimit(row),
@@ -530,7 +553,7 @@ async function loadLookups() {
 
 function currentPage() {
   const key = location.hash.slice(1);
-  return PAGES[key] ? key : "announcements";
+  return PAGES[key] ? key : "today";
 }
 
 async function route() {
@@ -538,25 +561,132 @@ async function route() {
   const key = currentPage();
   $("nav").replaceChildren(...Object.keys(PAGES).flatMap(k => [
     PAGES[k].group && el("div", { className: "navgroup" }, PAGES[k].group),
-    el("a", { href: "#" + k, ariaCurrent: k === key ? "page" : null }, PAGES[k].title),
+    el("a", { href: "#" + k, ariaCurrent: k === key ? "page" : null }, icon(PAGES[k].icon), PAGES[k].title),
   ]).filter(Boolean));
   document.title = PAGES[key].title + " · AVP Hub";
 
   const def = key === "volunteers" && !isCoordinator() ? VOLUNTEER_NAMES : PAGES[key];
-  const head = el("div", { className: "head" },
+  const head = key === "today" ? todayHead() : el("div", { className: "head" },
     el("h1", {}, def.title), el("p", { className: "lede" }, def.lede));
   const main = $("main");
+  main.classList.toggle("fresh", main.dataset.page !== key);   // animate only when arriving
   if (main.dataset.page !== key)               // first visit to this page: show "Loading"
     main.replaceChildren(head, el("p", { className: "muted" }, "Loading…"));
   main.dataset.page = key;
   try {
-    const content = key === "events" ? await drawEvents() : await drawPage(key, def);
+    const content = key === "today" ? await drawToday()
+      : key === "events" ? await drawEvents() : await drawPage(key, def);
     if (key !== currentPage()) return;          // they moved on while it loaded
     main.replaceChildren(head, ...content);
   } catch (err) {
     if (!session) return renderSignIn("signin", err.message);
     main.replaceChildren(head, el("p", { className: "error" }, err.message));
   }
+}
+
+// ---------------------------------------------------------------------
+// Today: a greeting, three summary cards, and short lists. It only reads.
+// ---------------------------------------------------------------------
+
+function todayHead() {
+  const now = new Date(), hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  return el("div", { className: "hello" },
+    el("div", { className: "head" },
+      el("p", { className: "dateline" }, now.toLocaleDateString("en-CA",
+        { weekday: "long", month: "long", day: "numeric", year: "numeric" })),
+      el("h1", {}, greeting + ", " + me.name.split(" ")[0]),
+      el("p", { className: "lede" }, "Here is where the desk stands. Read anything urgent first, then pick up a task.")),
+    el("button", { className: "primary", onclick: () => openForm(PAGES.notes) }, icon("pen"), "Write a handover note"));
+}
+
+// A friendly message for a list with nothing in it.
+function emptyState(iconName, text) {
+  return el("div", { className: "empty-state" },
+    el("div", { className: "bubble" }, icon(iconName)), el("p", {}, text));
+}
+
+async function drawToday() {
+  const day = today();
+  const later = new Date(); later.setDate(later.getDate() + 30);
+  const until = later.toLocaleDateString("en-CA");
+
+  let [tasks, urgent, events, dates, pinned] = await Promise.all([
+    api("GET", "tasks?select=*&status=neq.done&order=status.asc,title.asc"),
+    api("GET", "handover_notes?select=*&urgent=eq.true&resolved=eq.false&order=written_at.desc"),
+    api("GET", "events?select=*&date=gte." + day + "&order=date.asc"),
+    api("GET", "calendar_dates?select=*&date=gte." + day + "&date=lte." + until + "&order=date.asc"),
+    api("GET", "announcements?select=*&pinned=eq.true&order=date.desc"),
+  ]);
+  tasks = tasks.filter(t => t.status !== "done");
+  urgent = urgent.filter(n => n.urgent && !n.resolved);
+  pinned = pinned.filter(a => a.pinned);
+  const coming = [
+    ...events.filter(e => e.date && e.date >= day)
+      .map(e => ({ date: e.date, title: e.name, sub: e.location, tag: el("span", { className: "chip avp" }, "Event") })),
+    ...dates.filter(d => d.date && d.date >= day && d.date <= until)
+      .map(d => ({ date: d.date, title: d.what_happens, sub: d.notes, tag: chip(d.program) })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  const mine = tasks.filter(t => t.claimed_by === me.id).length;
+
+  const stat = (iconName, number, label, sub, href, isUrgent) =>
+    el("a", { className: "stat" + (isUrgent ? " urgent" : ""), href },
+      el("div", { className: "bubble" }, icon(iconName)),
+      el("b", {}, String(number)),
+      el("div", {}, el("div", { className: "label" }, label), el("div", { className: "sub" }, sub)));
+
+  const panel = (title, linkText, href, body) =>
+    el("section", { className: "panel" },
+      el("div", { className: "panel-head" }, el("h2", {}, title), el("a", { href }, linkText)), body);
+
+  const dateBadge = text => {
+    const d = new Date(text + "T00:00");
+    return el("div", { className: "datebadge" },
+      el("small", {}, d.toLocaleDateString("en-CA", { month: "short" }).replace(".", "")),
+      el("strong", {}, String(d.getDate())));
+  };
+
+  return [
+    el("div", { className: "stats" },
+      stat("check", tasks.length, "Open tasks",
+        mine ? mine + " claimed by you" : "None claimed by you yet", "#tasks"),
+      stat("alert", urgent.length, "Urgent handovers",
+        urgent.length ? "Read these before anything else" : "Nothing urgent right now", "#notes", urgent.length > 0),
+      stat("calendar", coming.length, "Coming up", "In the next 30 days", "#calendar")),
+
+    el("div", { className: "grid g2" },
+      panel("Urgent handovers", "All handover notes", "#notes", urgent.length
+        ? el("div", { className: "items" }, urgent.slice(0, 4).map(n =>
+            el("div", { className: "item urgent" }, el("div", { className: "text" },
+              el("span", {}, n.left_for_next || n.finished),
+              el("span", { className: "small muted" },
+                show({ name: "written_by", type: "volunteer" }, n) + " · " +
+                show({ name: "written_at", type: "datetime" }, n))))))
+        : emptyState("leaf", "No urgent handovers. A calm desk today.")),
+
+      panel("Coming up", "Full calendar", "#calendar", coming.length
+        ? el("div", { className: "items" }, coming.slice(0, 5).map(c =>
+            el("div", { className: "item" }, dateBadge(c.date),
+              el("div", { className: "text" }, el("span", {}, c.title),
+                c.sub && el("span", { className: "small muted" }, c.sub)), c.tag)))
+        : emptyState("calendar", "Nothing on the calendar for the next 30 days.")),
+
+      panel("Open tasks", "Task board", "#tasks", tasks.length
+        ? el("div", { className: "items" }, tasks.slice(0, 5).map(t =>
+            el("div", { className: "item" }, el("div", { className: "text" },
+              el("span", {}, t.title),
+              el("span", { className: "small muted" }, t.claimed_by
+                ? "In progress · " + show({ name: "claimed_by", type: "volunteer" }, t)
+                : "Not claimed yet")), chip(t.program))))
+        : emptyState("leaf", "No tasks yet: enjoy the quiet!")),
+
+      panel("Pinned announcements", "All announcements", "#announcements", pinned.length
+        ? el("div", { className: "items" }, pinned.slice(0, 3).map(a =>
+            el("div", { className: "item" }, el("div", { className: "text" },
+              el("span", {}, a.message),
+              el("span", { className: "small muted" }, show({ name: "date", type: "date" }, a))))))
+        : emptyState("megaphone", "No pinned announcements."))),
+  ];
 }
 
 // Permission checks, with "coordinator only" as the default.
