@@ -180,3 +180,61 @@ a.stat.urgent{background:var(--amber-soft);border-color:var(--amber)}
 }
 @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
 .rail .who:empty{display:none}
+
+/* ---------- Buttons beside a row ---------- */
+button.sm{font-size:.8rem;padding:5px 10px;border-radius:8px}
+button.sm.go{background:var(--mint);border-color:var(--mint-line);color:var(--green-dark)}
+button.sm.go:hover{background:var(--green);border-color:var(--green);color:#fff}
+button.sm.danger{color:var(--danger)}
+button.sm.danger:hover{background:#FEF3F2;border-color:#FDA29B;color:var(--danger)}
+.actions{gap:6px}
+.toolbar{gap:14px}
+.toolbar label{color:var(--muted)}
+
+/* ---------- Cards (announcements, handover notes) ---------- */
+.field{display:flex;flex-direction:column;gap:2px}
+.field-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--green)}
+.panel.dim{background:#F8FAF9;box-shadow:none}
+.panel.dim .field p{color:var(--muted)}
+.panel{transition:box-shadow .15s}
+
+/* ---------- Task board ---------- */
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:start}
+.column{background:var(--mint);border:1px solid var(--mint-line);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:12px;min-height:140px}
+.column-head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px}
+.column-head h2{font-size:1rem}
+.count{font-size:.78rem;font-weight:700;background:#fff;color:var(--green-dark);border-radius:99px;padding:1px 9px;border:1px solid var(--mint-line)}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 1px 2px rgba(15,26,20,.05);transition:transform .15s, box-shadow .15s}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+.card h3{font-family:var(--body);font-size:.95rem;font-weight:600;color:var(--ink);letter-spacing:0;line-height:1.35}
+.column-empty{padding:14px 6px;text-align:center}
+.column:last-child .card{opacity:.8}
+
+/* ---------- Events and checklists ---------- */
+.event-head{align-items:center;padding:0;border:0}
+.event-head .text{gap:2px}
+.items .item{align-items:center}
+.tick{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid #B7C9BE;display:grid;place-items:center;color:#fff}
+.item.done .tick{background:var(--green);border-color:var(--green)}
+.tick .icon{width:14px;height:14px;stroke-width:3}
+.item.done .text > span:first-child{color:var(--muted);text-decoration:line-through}
+
+/* ---------- Signed-out screens ---------- */
+body.signed-out{background:var(--mint)}
+body.signed-out .rail{display:none}
+body.signed-out .app{grid-template-columns:1fr}
+body.signed-out main{margin:0 auto;max-width:460px;padding-top:clamp(32px,10vh,96px);align-items:stretch}
+.signin-brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px}
+.signin-brand .mark{width:44px;height:7px;background:var(--green);border-radius:4px;margin-bottom:10px}
+.signin-brand b{font-family:var(--display);font-size:1.9rem;font-weight:800;color:var(--green-dark);letter-spacing:-.02em}
+.signin-brand span{font-size:.88rem;color:var(--muted)}
+.signin{max-width:none;padding:28px}
+
+@media (max-width:860px){
+  .board{grid-template-columns:1fr}
+  .column{min-height:0}
+  .item{flex-wrap:wrap}
+  .item .actions{width:100%;padding-left:66px}
+  .item .tick ~ .actions{padding-left:36px}
+  .event-head .actions{padding-left:0}
+}

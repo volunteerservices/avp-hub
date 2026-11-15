@@ -36,6 +36,8 @@ const ICONS = {
   alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/>',
   leaf: '<path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19 12 12"/>',
   pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  tick: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
 };
 function icon(name) {
   const holder = document.createElement("span");
@@ -77,18 +79,21 @@ const PAGES = {
 
   announcements: {
     title: "Announcements", singular: "announcement", icon: "megaphone",
+    empty: "No announcements right now.",
     lede: "Start every shift here: read the announcements, check what the last shift left for you, then pick up a task. Close your shift by writing a handover note.",
     table: "announcements", order: "pinned.desc,date.desc", layout: "cards",
     flag: row => row.pinned,
     fields: [
       { name: "message", label: "Announcement", type: "longtext", required: true },
-      { name: "date", label: "Date", type: "date", required: true, initial: today },
-      { name: "pinned", label: "Pinned", type: "yesno" },
+      { name: "date", label: "Date", type: "date", required: true, initial: today, as: "meta" },
+      { name: "pinned", label: "Pinned", type: "yesno", as: "chip" },
     ],
   },
 
   notes: {
     title: "Handover notes", singular: "handover note", icon: "clipboard",
+    empty: "No handover notes yet. Write the first one at the end of your shift.",
+    dim: row => row.resolved,
     lede: "Shifts are solo, so write a note at the end of every shift: what you finished, what's left, and whether anything is urgent. At the start of a shift, read the latest notes first. Anything urgent comes before new tasks.",
     table: "handover_notes", order: "resolved.asc,urgent.desc,written_at.desc", layout: "cards",
     reminder: true,
@@ -103,15 +108,17 @@ const PAGES = {
     fields: [
       { name: "finished", label: "What I finished", type: "longtext", required: true },
       { name: "left_for_next", label: "What's left for the next shift", type: "longtext" },
-      { name: "urgent", label: "Urgent", type: "yesno" },
-      { name: "resolved", label: "Resolved", type: "yesno" },
-      { name: "written_by", label: "Written by", type: "volunteer", readOnly: true },
-      { name: "written_at", label: "When", type: "datetime", readOnly: true },
+      { name: "urgent", label: "Urgent", type: "yesno", as: "chip", chipClass: "urgent" },
+      { name: "resolved", label: "Resolved", type: "yesno", as: "chip" },
+      { name: "written_by", label: "Written by", type: "volunteer", readOnly: true, as: "meta" },
+      { name: "written_at", label: "When", type: "datetime", readOnly: true, as: "meta" },
     ],
   },
 
   tasks: {
-    title: "Tasks", singular: "task", icon: "check",
+    title: "Tasks", singular: "task", icon: "check", layout: "board",
+    empty: "No tasks yet: enjoy the quiet!",
+    columnEmpty: { "to do": "Nothing waiting. Enjoy the quiet!", "in progress": "Nobody is working on a task right now.", "done": "Nothing finished yet." },
     lede: "Claim a task before you start so nobody doubles up. Downtime projects are longer jobs for quiet weeks, especially November to January and after the Appreciation Party.",
     table: "tasks", order: "program.asc,title.asc", filters: [{ field: "program" }, { field: "type" }],
     sort: rows => {
@@ -139,6 +146,7 @@ const PAGES = {
 
   guides: {
     title: "Front desk guides", singular: "guide", icon: "book",
+    empty: "No guides yet.",
     lede: "How to handle what walks up to the desk, including other programs' requests. Each guide is short on purpose; longer versions with screenshots live in the Guides & Templates folder on the shared drive.",
     table: "guides", order: "program.asc,title.asc", layout: "guides", filters: [{ field: "program" }],
     reminder: true,
@@ -150,7 +158,8 @@ const PAGES = {
   },
 
   calendar: {
-    title: "Calendar", singular: "calendar date", group: "Plan & remember", icon: "calendar",
+    title: "Calendar", singular: "calendar date", group: "Plan & remember", icon: "calendar", layout: "agenda",
+    empty: "Nothing on the calendar yet.",
     lede: "Every program's key dates from the Volunteer Services master calendar, so you can see what's coming and when other programs will need AVP's help.",
     table: "calendar_dates", order: "date.asc.nullslast",
     filters: [{ field: "school_year", latest: true }, { field: "program" }],
@@ -176,13 +185,14 @@ const PAGES = {
 
   partners: {
     title: "Partners and sponsors", singular: "organization", icon: "heart",
+    empty: "No partners or sponsors yet.",
     canAdd: () => true,      // volunteers may add and correct organizations,
     canEdit: () => true,     // but only the coordinator may delete them
     lede: "Volunteer Fair partner organizations and Appreciation Party sponsors, by year. Start next year's list from these, and thank them again when you ask.",
     table: "organizations", order: "year.desc,name.asc", filters: [{ field: "year", latest: true }, { field: "type" }],
     fields: [
       { name: "name", label: "Organization", type: "text", required: true },
-      { name: "type", label: "Type", type: "choice", options: ["fair partner", "sponsor"] },
+      { name: "type", label: "Type", type: "choice", options: ["fair partner", "sponsor"], as: "chip" },
       { name: "year", label: "Year", type: "number", required: true, initial: () => new Date().getFullYear() },
       { name: "notes", label: "Notes", type: "longtext" },
     ],
@@ -190,6 +200,7 @@ const PAGES = {
 
   volunteers: {
     title: "Volunteers", singular: "volunteer", icon: "users",
+    empty: "No volunteers yet.",
     lede: "Everyone with an AVP Hub account. New sign-ups wait here until the coordinator approves them.",
     table: "volunteers", order: "approved.asc,name.asc", filters: [{ field: "program_year" }],
     flag: row => !row.approved || pastLimit(row),
@@ -223,7 +234,11 @@ const PAGES = {
       { name: "program_year", label: "Program year", type: "text", required: true, initial: schoolYear },
       { name: "role", label: "Role", type: "choice", options: ["volunteer", "coordinator"] },
       { name: "approved", label: "Approved", type: "yesno" },
-      { name: "access", label: "Access", readOnly: true, compute: accessOf },
+      { name: "access", label: "Access", readOnly: true, compute: row => {
+          const text = accessOf(row);
+          const look = text === "Can sign in" ? " avp" : /Waiting|Past/.test(text) ? " urgent" : "";
+          return el("span", { className: "chip" + look }, text);
+        } },
     ],
   },
 };
@@ -360,15 +375,19 @@ const $ = id => document.getElementById(id);
 function el(tag, props, ...children) {
   const node = Object.assign(document.createElement(tag), props || {});
   for (const child of children.flat()) {
-    if (child !== null && child !== undefined && child !== false) node.append(child);
+    if (child !== null && child !== undefined && child !== false && child !== 0 && child !== "") node.append(child);
   }
   return node;
 }
 
 function signedOutScreen(...content) {
+  document.body.classList.add("signed-out");
   $("nav").replaceChildren();
   $("who").replaceChildren();
-  $("main").replaceChildren(el("section", { className: "panel signin" }, content));
+  $("main").replaceChildren(
+    el("div", { className: "signin-brand" }, el("div", { className: "mark" }), el("b", {}, "AVP Hub"),
+      el("span", {}, "Administrative Volunteer Program · SU Volunteer Services")),
+    el("section", { className: "panel signin" }, content));
 }
 
 function renderSignIn(mode, message) {
@@ -558,6 +577,7 @@ function currentPage() {
 
 async function route() {
   if (!me) return;
+  document.body.classList.remove("signed-out");
   const key = currentPage();
   $("nav").replaceChildren(...Object.keys(PAGES).flatMap(k => [
     PAGES[k].group && el("div", { className: "navgroup" }, PAGES[k].group),
@@ -639,13 +659,6 @@ async function drawToday() {
     el("section", { className: "panel" },
       el("div", { className: "panel-head" }, el("h2", {}, title), el("a", { href }, linkText)), body);
 
-  const dateBadge = text => {
-    const d = new Date(text + "T00:00");
-    return el("div", { className: "datebadge" },
-      el("small", {}, d.toLocaleDateString("en-CA", { month: "short" }).replace(".", "")),
-      el("strong", {}, String(d.getDate())));
-  };
-
   return [
     el("div", { className: "stats" },
       stat("check", tasks.length, "Open tasks",
@@ -698,9 +711,9 @@ async function drawPage(key, def) {
   let rows = await api("GET", def.table + "?select=*&order=" + def.order);
   if (def.sort) rows = def.sort(rows);
 
-  const toolbar = el("div", { className: "row" });
+  const toolbar = el("div", { className: "row toolbar" });
   if (canAdd(def))
-    toolbar.append(el("button", { className: "primary", onclick: () => openForm(def) }, "Add " + def.singular));
+    toolbar.append(el("button", { className: "primary", onclick: () => openForm(def) }, icon("plus"), "Add " + def.singular));
 
   // The drop-downs that narrow the list ("All" shows everything).
   for (const filter of def.filters || []) {
@@ -723,6 +736,15 @@ async function drawPage(key, def) {
   return [toolbar, drawRows(def, rows)];
 }
 
+// The little calendar square beside a dated item.
+function dateBadge(text) {
+  if (!text) return el("div", { className: "datebadge" }, el("small", {}, "TBD"), el("strong", {}, "?"));
+  const d = new Date(text + "T00:00");
+  return el("div", { className: "datebadge" },
+    el("small", {}, d.toLocaleDateString("en-CA", { month: "short" }).replace(".", "")),
+    el("strong", {}, String(d.getDate())));
+}
+
 async function drawEvents() {
   const def = PAGES.events;
   const [events, tasks] = await Promise.all([
@@ -731,28 +753,43 @@ async function drawEvents() {
   ]);
   const out = [];
   if (canAdd(def))
-    out.push(el("div", { className: "row" },
-      el("button", { className: "primary", onclick: () => openForm(def) }, "Add event")));
-  if (!events.length) out.push(el("p", { className: "empty" }, "Nothing here yet."));
+    out.push(el("div", { className: "row toolbar" },
+      el("button", { className: "primary", onclick: () => openForm(def) }, icon("plus"), "Add event")));
+  if (!events.length) out.push(emptyState("star", "No events yet."));
 
   for (const event of events) {
     const mine = tasks.filter(task => task.event_id === event.id);
+    const finished = mine.filter(task => task.done).length;
     out.push(el("section", { className: "panel" },
-      el("h2", {}, event.name),
-      el("p", { className: "muted" },
-        (event.date ? show(def.fields[1], event) : "Date not set") + " · " + (event.location || "Location not set")),
-      rowButtons(def, event),
-      el("h3", {}, "Checklist"),
-      mine.length ? drawTable(EVENT_TASKS, mine) : el("p", { className: "empty" }, "No checklist items yet."),
+      el("div", { className: "item event-head" },
+        dateBadge(event.date),
+        el("div", { className: "text" }, el("h2", {}, event.name),
+          el("span", { className: "muted" },
+            (event.date ? show(def.fields[1], event) : "Date not set") + " · " + (event.location || "Location not set"))),
+        rowButtons(def, event)),
+      el("div", { className: "panel-head" }, el("h3", {}, "Checklist"),
+        mine.length && el("span", { className: "small muted" }, finished + " of " + mine.length + " done")),
+      mine.length
+        ? el("div", { className: "items" }, mine.map(task =>
+            el("div", { className: "item" + (task.done ? " done" : "") },
+              el("span", { className: "tick" }, task.done && icon("tick")),
+              el("div", { className: "text" }, el("span", {}, task.title),
+                el("span", { className: "small muted" },
+                  task.due_date ? "Due " + show(EVENT_TASKS.fields[1], task) : "No due date")),
+              EVENT_TASKS.flag(task) && el("span", { className: "chip urgent" }, "Overdue"),
+              rowButtons(EVENT_TASKS, task))))
+        : el("p", { className: "small muted" }, "No checklist items yet."),
       isCoordinator() && el("div", { className: "row" },
-        el("button", { onclick: () => openForm(EVENT_TASKS, null, { event_id: event.id }) }, "Add checklist item"))));
+        el("button", { onclick: () => openForm(EVENT_TASKS, null, { event_id: event.id }) },
+          icon("plus"), "Add checklist item"))));
   }
   return out;
 }
 
-// A list of rows: a table, cards, or guides that open and close.
+// A list of rows, drawn the way the page asks for:
+// guides (open and close), board (columns), agenda (by month), cards, or a table.
 function drawRows(def, rows) {
-  if (!rows.length) return el("p", { className: "empty" }, "Nothing here yet.");
+  if (!rows.length) return emptyState(def.icon || "leaf", def.empty || "Nothing here yet.");
 
   if (def.layout === "guides") {
     return el("div", { className: "grid" }, rows.map(row =>
@@ -760,19 +797,71 @@ function drawRows(def, rows) {
         el("summary", {}, el("span", {}, row.title), chip(row.program)),
         el("div", { className: "body" }, show(def.fields[2], row), rowButtons(def, row)))));
   }
-
-  if (def.layout === "cards") {
-    return el("div", { className: "grid" }, rows.map(row => {
-      const [first, ...rest] = def.fields;
-      return el("section", { className: "panel" + (def.flag && def.flag(row) ? " flag" : "") },
-        first.type === "text" ? el("h3", {}, show(first, row)) : el("p", {}, show(first, row)),
-        rest.map(f => el("p", { className: "small" },
-          el("span", { className: "muted" }, f.label + ": "), show(f, row))),
-        rowButtons(def, row));
-    }));
-  }
-
+  if (def.layout === "board") return drawBoard(def, rows);
+  if (def.layout === "agenda") return drawAgenda(def, rows);
+  if (def.layout === "cards") return drawCards(def, rows);
   return el("section", { className: "panel" }, drawTable(def, rows));
+}
+
+// Cards: yes/no fields marked "chip" become tags, "meta" fields become the small last line.
+function drawCards(def, rows) {
+  const tags = def.fields.filter(f => f.as === "chip");
+  const meta = def.fields.filter(f => f.as === "meta");
+  const [first, ...rest] = def.fields.filter(f => !f.as);
+  const filled = (f, row) => row[f.name] !== "" && row[f.name] !== null && row[f.name] !== undefined;
+  return el("div", { className: "grid" }, rows.map(row => {
+    const on = tags.filter(f => row[f.name]);
+    return el("section", { className: "panel" + (def.flag && def.flag(row) ? " flag" : "") + (def.dim && def.dim(row) ? " dim" : "") },
+      on.length && el("div", { className: "row" },
+        on.map(f => el("span", { className: "chip " + (f.chipClass || "avp") }, f.label))),
+      first.type === "text" ? el("h3", {}, show(first, row))
+        : el("div", { className: "field" },
+            rest.length && el("span", { className: "field-label" }, first.label), el("p", {}, show(first, row))),
+      rest.map(f => filled(f, row) && el("div", { className: "field" },
+        el("span", { className: "field-label" }, f.label), el("p", {}, show(f, row)))),
+      meta.length && el("p", { className: "small muted" }, meta.map(f => show(f, row)).join(" · ")),
+      rowButtons(def, row));
+  }));
+}
+
+// The task board: one column per status, one card per task.
+function drawBoard(def, rows) {
+  const statuses = def.fields.find(f => f.name === "status").options;
+  return el("div", { className: "board" }, statuses.map(status => {
+    const mine = rows.filter(row => row.status === status);
+    return el("section", { className: "column" },
+      el("div", { className: "column-head" },
+        el("h2", {}, status[0].toUpperCase() + status.slice(1)),
+        el("span", { className: "count" }, String(mine.length))),
+      mine.length
+        ? mine.map(row => el("div", { className: "card" },
+            el("div", { className: "row" }, chip(row.program),
+              row.type !== "regular" && el("span", { className: "chip" }, row.type)),
+            el("h3", {}, row.title),
+            el("p", { className: "small muted" }, row.claimed_by
+              ? "Claimed by " + show({ name: "claimed_by", type: "volunteer" }, row) : "Not claimed yet"),
+            rowButtons(def, row)))
+        : el("p", { className: "small muted column-empty" }, def.columnEmpty[status] || "Nothing here."));
+  }));
+}
+
+// The calendar: one panel per month, dates without a day at the end.
+function drawAgenda(def, rows) {
+  const months = new Map();
+  for (const row of rows) {
+    const key = row.date ? row.date.slice(0, 7) : "tbd";
+    if (!months.has(key)) months.set(key, []);
+    months.get(key).push(row);
+  }
+  return el("div", { className: "grid" }, [...months].map(([key, list]) =>
+    el("section", { className: "panel" },
+      el("h2", {}, key === "tbd" ? "Date to be decided"
+        : new Date(key + "-01T00:00").toLocaleDateString("en-CA", { month: "long", year: "numeric" })),
+      el("div", { className: "items" }, list.map(row =>
+        el("div", { className: "item" }, dateBadge(row.date),
+          el("div", { className: "text" }, el("span", {}, row.what_happens),
+            row.notes && el("span", { className: "small muted" }, row.notes)),
+          chip(row.program), rowButtons(def, row)))))));
 }
 
 function drawTable(def, rows) {
@@ -806,6 +895,7 @@ function show(field, row) {
     return person ? person.name : "Former volunteer";
   }
   if (field.type === "program") return chip(value);
+  if (field.as === "chip") return el("span", { className: "chip" }, String(value));
   if (field.type === "steps")
     return el("ol", {}, String(value).split("\n").filter(line => line.trim()).map(line => el("li", {}, line.trim())));
   return String(value);
@@ -816,16 +906,16 @@ function rowButtons(def, row) {
   const buttons = [];
   for (const action of (def.actions ? def.actions(row) : [])) {
     buttons.push(el("button", { onclick: () => change(() =>
-      api("PATCH", def.table + "?id=eq." + row.id, action.patch)) }, action.label));
+      api("PATCH", def.table + "?id=eq." + row.id, action.patch)), className: "sm go" }, action.label));
   }
-  if (canEdit(def, row)) buttons.push(el("button", { onclick: () => openForm(def, row) }, "Edit"));
+  if (canEdit(def, row)) buttons.push(el("button", { className: "sm", onclick: () => openForm(def, row) }, "Edit"));
   if (canDelete(def, row)) {
-    buttons.push(el("button", { onclick: () => {
+    buttons.push(el("button", { className: "sm danger", onclick: () => {
       if (confirm("Delete this " + def.singular + "? This cannot be undone."))
         change(() => api("DELETE", def.table + "?id=eq." + row.id));
     } }, "Delete"));
   }
-  return buttons.length ? el("div", { className: "row" }, buttons) : "";
+  return buttons.length ? el("div", { className: "row actions" }, buttons) : "";
 }
 
 // Make a change, then redraw the page. Problems are shown in a pop-up.
