@@ -27,9 +27,36 @@ Keep their passwords in the office's usual password storage, not in AVP Hub.
 - **Handover notes:** write notes, edit their own, mark any note resolved.
 - **Tasks:** claim a task, mark it done, release it.
 - **Partners and sponsors:** add and correct organizations, but not delete them.
-- Everything else (announcements, calendar, events, guides) is view-only for volunteers.
+- Everything else (announcements, calendar, events, guides, How To cards) is view-only
+  for volunteers.
 
 The coordinator can add, edit and delete everything.
+
+## How To cards
+
+The How To page holds the how-to cards from the front desk binder. Volunteers pick a
+card from the list to open it. Only the coordinator sees Add, Edit and Delete.
+
+To change a card, open it and press Edit. The card text uses a few marks at the start
+of a line to set the layout:
+
+| Type this at the start of a line | You get |
+|---|---|
+| `# Heading` | A big heading |
+| `## HEADING` | A small heading, like STEPS |
+| `1. First step` | A numbered step. Lines right under it (no empty line) belong to that step |
+| `- An item` | A bullet |
+| `> Some text` | A highlighted box |
+| `\| one \| two \|` | A table row. Put `\|---\|---\|` under the first row to make it the headings |
+
+Inside a line, `**words**` makes bold text, and backticks around a folder path
+(`` `Drive › Guides` ``) show it as a label. Leave an empty line between sections.
+
+- **Two-part cards:** on part 1, choose part 2 under "Next card" and type the words for
+  the link (for example "Next: Good Food Box 2 of 2").
+- **Order:** "Place in the list" sets where the card appears; 1 is first.
+- **Dates:** change "Last updated" whenever you change a card.
+- The same content rules apply: no passwords, door codes or lockbox codes.
 
 ## Everyday jobs (all done on the site itself)
 
@@ -114,7 +141,7 @@ office shared drive.
 ## If something needs rebuilding
 
 - `database/setup.sql` recreates every table and access rule in a new Supabase project.
-- The content itself (guides, calendar, notes) is only in the database and in your CSV
+- The content itself (guides, How To cards, calendar, notes) is only in the database and in your CSV
   backups. It is deliberately not kept on GitHub, because the files there are public.
 - `config.js` holds the database address and public key. Never put a "secret" or
   "service_role" key in it.

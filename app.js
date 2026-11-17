@@ -35,6 +35,7 @@ const ICONS = {
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5a5 5 0 0 1 4.5 5"/>',
   alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/>',
   leaf: '<path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19 12 12"/>',
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
   pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   tick: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
@@ -71,7 +72,7 @@ function accessOf(row) {
 // =====================================================================
 // 1. PAGES
 //    Field types: text, longtext, steps, email, number, date, datetime,
-//    yesno, choice (with options), program, volunteer.
+//    yesno, choice (with options), program, volunteer, card.
 // =====================================================================
 
 const PAGES = {
@@ -154,6 +155,24 @@ const PAGES = {
       { name: "title", label: "Title", type: "text", required: true },
       { name: "program", label: "Program", type: "program" },
       { name: "steps", label: "Steps (one per line)", type: "steps", required: true },
+    ],
+  },
+
+  howto: {                                  // drawn by drawHowTo()
+    title: "How To", singular: "how-to card", icon: "bulb",
+    empty: "No how-to cards yet.",
+    lede: "The how-to cards from the front desk binder. Pick a card to open it.",
+    table: "howto_cards", order: "position.asc,title.asc",
+    reminder: true,
+    fields: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "label", label: "Small heading above the title", type: "text" },
+      { name: "last_updated", label: "Last updated", type: "date" },
+      { name: "body", label: "Card text (the coordinator guide explains the layout marks)", type: "longtext", required: true },
+      { name: "footer", label: "Small print at the bottom", type: "longtext" },
+      { name: "next_card", label: "Next card (only for two-part cards)", type: "card" },
+      { name: "next_label", label: "Words for the link to the next card", type: "text" },
+      { name: "position", label: "Place in the list (1 is first)", type: "number" },
     ],
   },
 
@@ -605,7 +624,7 @@ async function loadLookups() {
 // =====================================================================
 
 function currentPage() {
-  const key = location.hash.slice(1);
+  const key = location.hash.slice(1).split("/")[0];   // "#howto/3" is still the How To page
   return PAGES[key] ? key : "today";
 }
 
@@ -620,17 +639,24 @@ async function route() {
   document.title = PAGES[key].title + " · AVP Hub";
 
   const def = key === "volunteers" && !isCoordinator() ? VOLUNTEER_NAMES : PAGES[key];
-  const head = key === "today" ? todayHead() : el("div", { className: "head" },
-    el("h1", {}, def.title), el("p", { className: "lede" }, def.lede));
+  const cardId = key === "howto" ? location.hash.split("/")[1] || "" : "";   // one open how-to card
+  const view = cardId ? key + "/" + cardId : key;
+  const head = key === "today" ? todayHead()
+    : cardId ? el("a", { className: "back", href: "#howto" }, "← All how-to cards")
+    : el("div", { className: "head" }, el("h1", {}, def.title), el("p", { className: "lede" }, def.lede));
   const main = $("main");
-  main.classList.toggle("fresh", main.dataset.page !== key);   // animate only when arriving
-  if (main.dataset.page !== key)               // first visit to this page: show "Loading"
+  main.classList.toggle("fresh", main.dataset.page !== view);   // animate only when arriving
+  if (main.dataset.page !== view) {            // first visit to this page: show "Loading"
     main.replaceChildren(head, el("p", { className: "muted" }, "Loading…"));
-  main.dataset.page = key;
+    if (key === "howto") scrollTo(0, 0);       // open each card at its top
+  }
+  main.dataset.page = view;
   try {
     const content = key === "today" ? await drawToday()
+      : key === "howto" ? await drawHowTo(def, cardId)
       : key === "events" ? await drawEvents() : await drawPage(key, def);
     if (key !== currentPage()) return;          // they moved on while it loaded
+    if (key === "howto" && (location.hash.split("/")[1] || "") !== cardId) return;
     main.replaceChildren(head, ...content);
   } catch (err) {
     if (!session) return renderSignIn("signin", err.message);
@@ -768,6 +794,105 @@ async function drawPage(key, def) {
   const extra = def.extra && def.extra(rows);
   if (extra) toolbar.append(extra);
   return [toolbar, drawRows(def, rows)];
+}
+
+// ---------------------------------------------------------------------
+// How To: a list of how-to cards; choosing one opens the full card.
+// ---------------------------------------------------------------------
+
+let howtoCards = [];   // the cards last loaded, for the "Next card" choice in the form
+
+async function drawHowTo(def, cardId) {
+  howtoCards = await api("GET", def.table + "?select=*&order=" + def.order);
+  const updated = card => card.last_updated && "Last updated " +
+    new Date(card.last_updated + "T00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }).replace(".", "");
+
+  if (!cardId) {                                          // the list
+    return [
+      canAdd(def) && el("div", { className: "row toolbar" },
+        el("button", { className: "primary", onclick: () => openForm(def) }, icon("plus"), "Add " + def.singular)),
+      howtoCards.length
+        ? el("div", { className: "grid" }, howtoCards.map(card =>
+            el("a", { className: "panel howto-link", href: "#howto/" + card.id },
+              el("div", { className: "bubble" }, icon("bulb")),
+              el("div", { className: "text" },
+                card.label && el("span", { className: "field-label" }, card.label),
+                el("h2", {}, card.title),
+                updated(card) && el("span", { className: "small muted" }, updated(card))),
+              el("span", { className: "go", ariaHidden: "true" }, "›"))))
+        : emptyState(def.icon, def.empty),
+    ].filter(Boolean);
+  }
+
+  const card = howtoCards.find(c => String(c.id) === cardId);   // one card
+  if (!card) return [el("p", { className: "muted" }, "That card is not here any more.")];
+  const next = howtoCards.find(c => c.id === card.next_card);
+  return [el("article", { className: "panel howto-card" },
+    card.label && el("span", { className: "field-label" }, card.label),
+    el("h1", {}, card.title),
+    updated(card) && el("p", { className: "small muted" }, updated(card)),
+    cardBody(card.body || ""),
+    next && el("a", { className: "howto-next", href: "#howto/" + next.id },
+      card.next_label || "Next: " + next.title, el("span", { ariaHidden: "true" }, " →")),
+    card.footer && el("p", { className: "small muted howto-foot" }, card.footer),
+    rowButtons(def, card))];
+}
+
+// **bold** and `folder path` inside a line of card text.
+function cardLine(text) {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).map(part =>
+    part.startsWith("**") && part.length > 4 ? el("strong", {}, part.slice(2, -2))
+    : part.startsWith("`") && part.length > 2 ? el("span", { className: "path" }, part.slice(1, -1))
+    : part);
+}
+
+// Turns a card's text into page pieces. The layout marks, one per line start:
+//   # Big heading          ## SMALL HEADING        1. A numbered step
+//   - A bullet             > A highlighted box     | a | b |  a table row
+// A row of dashes (|---|---|) under a table's first row makes that row the headings.
+// Lines right under a step (no empty line between) belong to that step.
+function cardBody(text) {
+  const lines = text.split(/\r?\n/), out = [];
+  const isStep = line => /^\d+\. /.test(line);
+  const starts = (line, mark) => line.startsWith(mark);
+  let i = 0;
+  const take = test => { const got = []; while (i < lines.length && test(lines[i])) got.push(lines[i++]); return got; };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; }
+    else if (starts(line, "## ")) { out.push(el("h3", { className: "howto-label" }, cardLine(line.slice(3)))); i++; }
+    else if (starts(line, "# ")) { out.push(el("h2", { className: "howto-heading" }, cardLine(line.slice(2)))); i++; }
+    else if (isStep(line)) {
+      i++;
+      const rest = take(l => l.trim() && !isStep(l));
+      out.push(el("div", { className: "step" },
+        el("span", { className: "step-number" }, line.match(/^\d+/)[0]),
+        el("div", { className: "step-text" }, el("p", {}, cardLine(line.replace(/^\d+\. /, ""))), cardBody(rest.join("\n")))));
+    }
+    else if (starts(line, ">")) {
+      out.push(el("div", { className: "howto-box" }, cardBody(take(l => starts(l, ">")).map(l => l.replace(/^> ?/, "")).join("\n"))));
+    }
+    else if (starts(line, "- ")) {
+      out.push(el("ul", {}, take(l => starts(l, "- ")).map(l => el("li", {}, cardLine(l.slice(2))))));
+    }
+    else if (starts(line, "|")) {
+      const rows = take(l => starts(l, "|")).map(l => l.replace(/^\|/, "").replace(/\|\s*$/, "").split("|").map(cell => cell.trim()));
+      const hasHead = rows.length > 1 && rows[1].every(cell => /^-+$/.test(cell));
+      const head = hasHead ? rows[0] : null, body = hasHead ? rows.slice(2) : rows;
+      out.push(el("div", { className: "tablewrap" }, el("table", { className: "howto-table" + (head ? " stack" : "") },
+        head && el("thead", {}, el("tr", {}, head.map(cell => el("th", {}, cardLine(cell))))),
+        el("tbody", {}, body.map(row => el("tr", {}, row.map((cell, c) => {
+          const td = el("td", {}, cardLine(cell));
+          if (head) td.dataset.label = head[c] || "";
+          return td;
+        })))))));
+    }
+    else {
+      out.push(el("p", {}, cardLine(take(l => l.trim() && !isStep(l) && !/^(#{1,2} |>|- |\|)/.test(l)).join(" "))));
+    }
+  }
+  return out;
 }
 
 // The little calendar square beside a dated item.
@@ -1017,6 +1142,8 @@ function makeInput(field, value) {
     return el("select", {}, options(programs
       .filter(p => field.all || !p.calendar_only || p.code === value)
       .map(p => [p.code, p.code === p.name ? p.code : p.code + " · " + p.name])));
+  if (field.type === "card")
+    return el("select", {}, options([["", "None"]].concat(howtoCards.map(c => [String(c.id), c.title]))));
   if (field.type === "volunteer")
     return el("select", {}, options([["", "Nobody"]].concat(
       names.filter(n => n.status === "active" || n.id === value).map(n => [String(n.id), n.name]))));
@@ -1029,7 +1156,7 @@ function readInput(field, input) {
   const value = input.value.trim();
   if (field.type === "yesno") return value === "true";
   if (field.type === "number") return Number(value);
-  if (field.type === "volunteer") return value ? Number(value) : null;
+  if (field.type === "volunteer" || field.type === "card") return value ? Number(value) : null;
   if (field.type === "date") return value || null;
   if (field.type === "email") return value.toLowerCase();
   return value;

@@ -330,3 +330,30 @@ create policy "members add" on organizations for insert to authenticated
   with check (is_member());
 create policy "members correct" on organizations for update to authenticated
   using (is_member()) with check (is_member());
+
+-- ---------------------------------------------------------------
+-- 7. HOW-TO CARDS (the How To page)
+--    Members read; only the coordinator adds, edits or deletes.
+--    The card text itself is private content and is not in this file.
+-- ---------------------------------------------------------------
+
+create table howto_cards (
+  id           bigint generated always as identity primary key,
+  position     integer not null default 0,        -- place in the list, 1 is first
+  label        text not null default '',          -- small heading above the title
+  title        text not null,
+  last_updated date,
+  body         text not null,                     -- the card, with simple layout marks
+  footer       text not null default '',          -- small print at the bottom
+  next_card    bigint references howto_cards (id) on delete set null,   -- part 2 of a two-part card
+  next_label   text not null default ''
+);
+
+alter table howto_cards enable row level security;
+create policy "members read" on howto_cards for select to authenticated
+  using (is_member());
+create policy "coordinator changes" on howto_cards for all to authenticated
+  using (is_coordinator()) with check (is_coordinator());
+
+revoke all on howto_cards from anon, public;
+grant select, insert, update, delete on howto_cards to authenticated;
