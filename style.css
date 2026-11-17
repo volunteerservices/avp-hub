@@ -230,6 +230,27 @@ body.signed-out main{margin:0 auto;max-width:460px;padding-top:clamp(32px,10vh,9
 .signin-brand span{font-size:.88rem;color:var(--muted)}
 .signin{max-width:none;padding:28px}
 
+/* ---------- Public welcome page ---------- */
+body.welcome main{max-width:1000px;padding-top:clamp(24px,7vh,72px);padding-bottom:40px}
+.welcome-hero{background:#fff;border:1px solid var(--mint-line);border-radius:24px;box-shadow:var(--shadow);padding:clamp(32px,7vw,72px) clamp(20px,5vw,56px);display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px}
+.welcome-hero .mark{width:48px;height:7px;background:var(--green);border-radius:4px}
+.welcome-kicker{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--green)}
+.welcome-hero h1{font-size:clamp(2rem,6vw,3.3rem);letter-spacing:-.025em;line-height:1.08}
+.welcome-hero .lede{font-size:clamp(1rem,2.2vw,1.15rem);max-width:56ch}
+button.primary.big{font-size:1.05rem;padding:13px 40px;border-radius:14px;margin-top:10px}
+.welcome-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+.welcome-card{gap:10px;transition:transform .15s, box-shadow .15s}
+.welcome-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lift)}
+.welcome-card .bubble{width:46px;height:46px;border-radius:14px;background:var(--mint);color:var(--green);display:grid;place-items:center}
+.welcome-card p{color:var(--muted)}
+.welcome-foot{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;text-align:center;font-size:.87rem;color:var(--muted)}
+.welcome-foot > * + *::before{content:"·";margin-right:10px;color:var(--muted)}
+.welcome-foot a{font-weight:600}
+@media (max-width:640px){
+  .welcome-foot{flex-direction:column;align-items:center}
+  .welcome-foot > * + *::before{content:none}
+}
+
 @media (max-width:860px){
   .board{grid-template-columns:1fr}
   .column{min-height:0}

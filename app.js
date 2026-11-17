@@ -380,7 +380,40 @@ function el(tag, props, ...children) {
   return node;
 }
 
+// The public welcome page: what anyone sees before signing in.
+// Nothing here comes from the database, so keep it free of names and details.
+function renderWelcome() {
+  document.body.classList.add("signed-out", "welcome");
+  document.title = "Welcome · AVP Hub";
+  $("nav").replaceChildren();
+  $("who").replaceChildren();
+  const card = (iconName, title, text) =>
+    el("div", { className: "panel welcome-card" },
+      el("div", { className: "bubble" }, icon(iconName)), el("h2", {}, title), el("p", {}, text));
+  const main = $("main");
+  main.classList.add("fresh");
+  main.replaceChildren(
+    el("section", { className: "welcome-hero" },
+      el("div", { className: "mark" }),
+      el("p", { className: "welcome-kicker" }, "Administrative Volunteer Program"),
+      el("h1", {}, "Welcome to the Volunteer Hub"),
+      el("p", { className: "lede" }, "The home base for the Administrative Volunteer Program at SU Volunteer Services. Sign in to see today's tasks, handover notes and upcoming events."),
+      el("button", { className: "primary big", onclick: () => renderSignIn("signin") }, "Sign in"),
+      el("button", { className: "link", onclick: () => renderSignIn("signup") }, "New volunteer? Request access")),
+    el("div", { className: "grid welcome-cards" },
+      card("clipboard", "Shift handovers", "See what the last shift finished and what they left for you."),
+      card("check", "Task board", "Pick up a task, claim it, and mark it done when you finish."),
+      card("book", "Front desk guides", "Step-by-step help for the questions that come to the desk.")),
+    el("footer", { className: "welcome-foot" },
+      el("span", {}, "Volunteer Services"),
+      el("span", {}, "MacEwan Student Centre, Room 225"),
+      el("span", {}, "Mon–Fri 8:30 am – 4:30 pm"),
+      el("a", { href: "mailto:volunteer@su.ucalgary.ca" }, "volunteer@su.ucalgary.ca")));
+}
+
 function signedOutScreen(...content) {
+  document.body.classList.remove("welcome");
+  document.title = "AVP Hub";
   document.body.classList.add("signed-out");
   $("nav").replaceChildren();
   $("who").replaceChildren();
@@ -451,7 +484,8 @@ function renderSignIn(mode, message) {
     el("h2", {}, titles[mode]), form,
     mode !== "signin" && link("Back to sign in", "signin"),
     mode === "signin" && link("New volunteer? Create your account", "signup"),
-    mode === "signin" && link("Forgot your password?", "forgot"));
+    mode === "signin" && link("Forgot your password?", "forgot"),
+    el("p", {}, el("button", { className: "link", type: "button", onclick: renderWelcome }, "Back to the welcome page")));
 }
 
 // Shown after clicking the reset link in the email.
@@ -490,7 +524,7 @@ async function signOut() {
   me = null;
   if (token) auth("POST", "logout", {}, token).catch(() => {});
   location.hash = "";
-  renderSignIn();
+  renderWelcome();
 }
 
 // Runs when the site opens, and again after signing in.
@@ -539,7 +573,7 @@ async function start() {
     if (link.get("type") === "recovery") return renderNewPassword();
   }
 
-  if (!session) return renderSignIn();
+  if (!session) return renderWelcome();
 
   try {
     me = (await api("GET", "volunteers?select=*&user_id=eq." + userId()))[0] || null;
@@ -577,7 +611,7 @@ function currentPage() {
 
 async function route() {
   if (!me) return;
-  document.body.classList.remove("signed-out");
+  document.body.classList.remove("signed-out", "welcome");
   const key = currentPage();
   $("nav").replaceChildren(...Object.keys(PAGES).flatMap(k => [
     PAGES[k].group && el("div", { className: "navgroup" }, PAGES[k].group),
