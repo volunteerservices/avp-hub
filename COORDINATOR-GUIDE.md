@@ -140,9 +140,15 @@ but GitHub turns that robot off after about 60 quiet days.
 
 ## Backups
 
-The free plan keeps no automatic backups. Once a term, and at handover:
-Supabase > Table Editor > open each table > Export > CSV. Save the files in the
-office shared drive.
+The free plan keeps no automatic backups, so we make our own. Every Sunday a free
+GitHub job copies every table into the **private** GitHub project
+`volunteerservices/avp-hub-backups`, one dated folder per week. Check it monthly:
+that project > Actions > Weekly backup > the newest run has a green tick. Its README
+explains failures and restoring. The job reads the database with a Supabase secret key
+stored only in that project's encrypted secrets.
+
+If the automatic backup ever stops working: Supabase > Table Editor > open each table >
+Export > CSV, and save the files in a staff-only folder on the office shared drive.
 
 ## Changes made in Supabase (rare)
 

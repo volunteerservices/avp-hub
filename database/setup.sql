@@ -393,3 +393,14 @@ create policy "coordinator only" on reminders for all to authenticated
 
 revoke all on corner_pages, reminders from anon, public;
 grant select, insert, update, delete on corner_pages, reminders to authenticated;
+
+-- ---------------------------------------------------------------
+-- 9. BACKUPS
+--    The weekly backup job (private GitHub project avp-hub-backups)
+--    signs in with a Supabase secret key, role service_role. It may
+--    READ every table, now and in future, and change nothing.
+-- ---------------------------------------------------------------
+
+grant usage on schema public to service_role;
+grant select on all tables in schema public to service_role;
+alter default privileges in schema public grant select on tables to service_role;
