@@ -248,7 +248,7 @@ const PAGES = {
         ? "You can't remove your own coordinator access. Make the new coordinator first, then ask them to change your account."
         : "",
     fields: [
-      { name: "name", label: "Name", type: "text", required: true },
+      { name: "name", label: "Name", type: "text", required: true, link: row => "#corner/log?who=" + row.id },
       { name: "email", label: "UCalgary email", type: "email", required: true },
       { name: "status", label: "Status", type: "choice", options: ["active", "inactive"] },
       { name: "program_year", label: "Program year", type: "text", required: true, initial: schoolYear },
@@ -270,7 +270,7 @@ const PAGES = {
 
 // Coordinator Corner has three parts. The manual and the "about" guide are
 // sections of text; the reminders are the coordinator's recurring jobs.
-const CORNER_PARTS = { manual: "Website manual", reminders: "Reminders", about: "About this website" };
+const CORNER_PARTS = { manual: "Website manual", reminders: "Reminders", log: "Activity log", about: "About this website" };
 const CORNER_PAGES = {
   singular: "section", table: "corner_pages", order: "position.asc,title.asc", reminder: true,
   fields: [
@@ -452,7 +452,8 @@ function renderWelcome() {
       el("h1", {}, "Welcome to the Volunteer Hub"),
       el("p", { className: "lede" }, "The home base for the Administrative Volunteer Program at SU Volunteer Services. Sign in to see today's tasks, handover notes and upcoming events."),
       el("button", { className: "primary big", onclick: () => renderSignIn("signin") }, "Sign in"),
-      el("button", { className: "link", onclick: () => renderSignIn("signup") }, "New volunteer? Request access")),
+      el("button", { className: "link", onclick: () => renderSignIn("signup") }, "New volunteer? Request access"),
+      el("p", { className: "small muted welcome-note" }, "Changes made on the hub are recorded so the coordinator can keep things running smoothly.")),
     el("div", { className: "grid welcome-cards" },
       card("clipboard", "Shift handovers", "See what the last shift finished and what they left for you."),
       card("check", "Task board", "Pick up a task, claim it, and mark it done when you finish."),
@@ -675,7 +676,7 @@ async function route() {
   const def = key === "volunteers" && !isCoordinator() ? VOLUNTEER_NAMES : PAGES[key];
   const sub = location.hash.slice(1).split("/")[1] || "";   // "#howto/3" or "#corner/reminders"
   const cardId = key === "howto" ? sub : "";                // one open how-to card
-  const view = sub ? key + "/" + sub : key;
+  const view = sub ? key + "/" + sub.split("?")[0] : key;
   const head = key === "today" ? todayHead()
     : cardId ? el("a", { className: "back", href: "#howto" }, "← All how-to cards")
     : el("div", { className: "head" }, el("h1", {}, def.title), el("p", { className: "lede" }, def.lede));
@@ -687,6 +688,7 @@ async function route() {
   }
   main.dataset.page = view;
   try {
+    if (key !== "today") await loadLastEdits();
     const content = key === "today" ? await drawToday()
       : key === "howto" ? await drawHowTo(def, cardId)
       : key === "corner" ? await drawCorner(sub)
@@ -952,10 +954,12 @@ function cardBody(text) {
 const daysFromNow = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("en-CA"); };
 
 async function drawCorner(sub) {
-  const tab = CORNER_PARTS[sub] ? sub : "manual";
+  const [part, query] = sub.split("?");
+  const tab = CORNER_PARTS[part] ? part : "manual";
   const tabs = el("div", { className: "tabs" }, Object.keys(CORNER_PARTS).map(k =>
     el("a", { href: "#corner/" + k, ariaCurrent: k === tab ? "page" : null }, CORNER_PARTS[k])));
   if (tab === "reminders") return [tabs, ...await drawReminders()];
+  if (tab === "log") return [tabs, ...await drawLog(new URLSearchParams(query || ""))];
 
   const def = CORNER_PAGES;
   const rows = (await api("GET", def.table + "?select=*&part=eq." + encodeURIComponent(CORNER_PARTS[tab]) + "&order=" + def.order))
@@ -1027,6 +1031,281 @@ async function drawReminders() {
             el("div", { className: "items" }, list.map(r => reminderRow(r))))))
       : emptyState("key", "No reminders yet."),
   ];
+}
+
+// ---------------------------------------------------------------------
+// Activity log (coordinator only). The database writes every entry
+// itself; this page only reads them. Entries cannot be changed.
+// ---------------------------------------------------------------------
+
+let lastEdits = new Map();   // "tasks:12" -> {actor_name, action, detail, at}
+async function loadLastEdits() {
+  try {
+    lastEdits = new Map((await api("GET", "last_edits?select=*")).map(e => [e.item_type + ":" + e.item_id, e]));
+  } catch (err) {
+    lastEdits = new Map();     // the page still works without the names
+  }
+}
+
+const shortDate = at => new Date(at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }).replace(".", "");
+const LOG_PAGE_SIZE = 50;
+const LOG_COLUMNS = "id,at,actor_id,actor_name,action,detail,item_type,item_id,item_label,old_row,new_row";
+
+// What each logged table is called, and where its field names come from.
+function logTypes() {
+  return {
+    announcements: ["Announcement", PAGES.announcements], tasks: ["Task", PAGES.tasks],
+    handover_notes: ["Handover note", PAGES.notes], howto_cards: ["How To card", PAGES.howto],
+    guides: ["Front desk guide", PAGES.guides], calendar_dates: ["Calendar date", PAGES.calendar],
+    events: ["Event", PAGES.events], event_tasks: ["Event checklist item", EVENT_TASKS],
+    organizations: ["Partner or sponsor", PAGES.partners], volunteers: ["Volunteer", PAGES.volunteers],
+    reminders: ["Reminder", REMINDERS], corner_pages: ["Coordinator Corner section", CORNER_PAGES],
+    programs: ["Program", null], activity_log: ["Activity log", null],
+  };
+}
+const RESTORABLE = ["announcements", "calendar_dates", "corner_pages", "event_tasks", "events", "guides",
+  "handover_notes", "howto_cards", "organizations", "reminders", "tasks", "volunteers"];
+
+// June 1 of last school year: entries before this can be downloaded and removed.
+function logCutoff() { return new Date(firstYear(schoolYear()) - 1, 5, 1); }
+
+async function drawLog(params) {
+  const types = logTypes();
+  const who = params.get("who") || "", type = params.get("type") || "", action = params.get("action") || "";
+  const from = params.get("from") || "", to = params.get("to") || "", q = params.get("q") || "", item = params.get("item") || "";
+  const go = changes => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(changes)) v ? next.set(k, v) : next.delete(k);
+    location.hash = "corner/log" + (String(next) ? "?" + next : "");
+  };
+
+  const query = [];
+  if (who === "db") query.push("actor_id=is.null");
+  else if (who) query.push("actor_id=eq." + Number(who));
+  if (type) query.push("item_type=eq." + encodeURIComponent(type));
+  if (action) query.push("action=eq." + encodeURIComponent(action));
+  if (from) query.push("at=gte." + encodeURIComponent(new Date(from + "T00:00").toISOString()));
+  if (to) { const end = new Date(to + "T00:00"); end.setDate(end.getDate() + 1); query.push("at=lt." + encodeURIComponent(end.toISOString())); }
+  const term = q.toLowerCase().replace(/[*%,()]/g, " ").trim();
+  if (term) query.push("search_text=ilike." + encodeURIComponent("*" + term + "*"));
+  if (item) { const [t, id] = item.split(":"); query.push("item_type=eq." + encodeURIComponent(t), "item_id=eq." + Number(id)); }
+  const base = "activity_log?select=" + LOG_COLUMNS + "&order=at.desc,id.desc" + (query.length ? "&" + query.join("&") : "");
+
+  const [first, older] = await Promise.all([
+    api("GET", base + "&limit=" + (LOG_PAGE_SIZE + 1) + "&offset=0"),
+    api("GET", "activity_log?select=id&at=lt." + encodeURIComponent(logCutoff().toISOString())),
+  ]);
+
+  // Filters
+  const select = (label, value, options, key) => {
+    const box = el("select", {}, el("option", { value: "" }, "All"),
+      options.map(([v, text]) => el("option", { value: v, selected: v === value }, text)));
+    box.onchange = () => go({ [key]: box.value, item: "" });
+    return el("label", {}, label, box);
+  };
+  const date = (label, value, key) => {
+    const box = el("input", { type: "date", value });
+    box.onchange = () => go({ [key]: box.value });
+    return el("label", {}, label, box);
+  };
+  const search = el("input", { type: "search", value: q, placeholder: "Words in the item or the change" });
+  const searchForm = el("form", { className: "log-search" }, el("label", {}, "Search", search),
+    el("button", { type: "submit" }, "Search"));
+  searchForm.onsubmit = e => { e.preventDefault(); go({ q: search.value.trim() }); };
+  const anyFilter = who || type || action || from || to || q || item;
+  const filters = el("div", { className: "row toolbar log-filters" },
+    select("Volunteer", who, [...names.map(p => [String(p.id), p.name]), ["db", "Directly in the database"]], "who"),
+    select("Type of item", type, Object.entries(types).map(([k, [label]]) => [k, label]), "type"),
+    select("Action", action, [["added", "Added"], ["edited", "Edited"], ["deleted", "Deleted"], ["signed in", "Signed in"], ["log clean-up", "Log clean-up"]], "action"),
+    date("From", from, "from"), date("To", to, "to"), searchForm,
+    anyFilter && el("a", { href: "#corner/log", className: "clear-filters" }, "Clear filters"));
+
+  // A heading when looking at one person or one item
+  let heading = null;
+  if (who) {
+    const person = who === "db" ? "changes made directly in the database" : (names.find(p => String(p.id) === who) || {}).name;
+    heading = el("div", { className: "panel log-heading" },
+      el("h2", {}, who === "db" ? "Everything changed directly in the database" : "Everything " + (person || "this volunteer") + " has done"),
+      el("p", { className: "small muted" }, "Newest first. Use the other filters to narrow it down."));
+  } else if (item) {
+    const [t] = item.split(":");
+    heading = el("div", { className: "panel log-heading" },
+      el("h2", {}, "History of this " + ((types[t] || [t])[0]).toLowerCase() + (first[0] ? ": " + first[0].item_label : "")),
+      el("p", { className: "small muted" }, "Every change to this one item, newest first."));
+  }
+
+  const list = el("div", { className: "log-list" });
+  const showRows = rows => rows.slice(0, LOG_PAGE_SIZE).forEach(entry => list.append(logEntry(entry, types)));
+  showRows(first);
+  let offset = LOG_PAGE_SIZE;
+  const more = el("button", {}, "Show " + LOG_PAGE_SIZE + " more");
+  more.onclick = async () => {
+    more.disabled = true;
+    const rows = await api("GET", base + "&limit=" + (LOG_PAGE_SIZE + 1) + "&offset=" + offset);
+    showRows(rows); offset += LOG_PAGE_SIZE;
+    more.disabled = false;
+    if (rows.length <= LOG_PAGE_SIZE) more.remove();
+  };
+
+  return [
+    el("p", { className: "lede" }, "Everything added, changed or deleted on the hub, and every sign-in, recorded by the database itself. Nobody can change or delete these entries. Only you can see this page."),
+    older.length ? oldEntriesBox(older.length) : null,
+    filters, heading,
+    first.length ? list : emptyState("key", anyFilter ? "Nothing matches these filters." : "Nothing recorded yet."),
+    first.length > LOG_PAGE_SIZE ? el("div", { className: "row" }, more) : null,
+  ].filter(Boolean);
+}
+
+// One entry: who, what, which item, when, and the details.
+function logEntry(entry, types) {
+  const [typeName, def] = types[entry.item_type] || [entry.item_type, null];
+  const verb = entry.detail || entry.action;
+  const whoLink = el("a", { href: "#corner/log?who=" + (entry.actor_id === null ? "db" : entry.actor_id) }, entry.actor_name);
+  const when = new Date(entry.at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  const chipClass = { added: "avp", deleted: "danger", "signed in": "" }[entry.action] || "";
+  const body = [];
+
+  if (entry.action === "edited" && entry.old_row && entry.new_row) body.push(changeTable(def, entry.old_row, entry.new_row));
+  if (entry.action === "added" && entry.new_row)
+    body.push(el("details", { className: "log-more" }, el("summary", {}, "Show what was added"), valueList(def, entry.new_row)));
+  if (entry.action === "deleted" && entry.old_row) {
+    body.push(el("details", { className: "log-more" }, el("summary", {}, "Show what was deleted"), valueList(def, entry.old_row)));
+    if (RESTORABLE.includes(entry.item_type)) body.push(el("div", { className: "row" }, el("button", { className: "sm go", onclick: async () => {
+      if (!confirm("Put back this " + typeName.toLowerCase() + "?\n\n" + entry.item_label)) return;
+      try {
+        await api("POST", "rpc/restore_from_log", { entry: entry.id });
+        alert("Restored: " + entry.item_label);
+        route();
+      } catch (err) { alert(err.message); }
+    } }, "Restore")));
+  }
+
+  return el("article", { className: "log-entry" + (entry.action === "deleted" ? " deleted" : "") },
+    el("div", { className: "log-line" },
+      el("span", { className: "chip " + chipClass }, entry.action),
+      el("div", { className: "text" },
+        el("p", {}, whoLink, " " + verb + (entry.action === "signed in" || entry.action === "log clean-up" ? "" : " · " + typeName),
+          entry.item_label && entry.action !== "signed in" ? el("strong", {}, ": " + entry.item_label) : null),
+        el("span", { className: "small muted" }, when,
+          entry.item_id !== null && entry.item_type !== "activity_log" && entry.action !== "signed in"
+            ? el("span", {}, " · ", el("a", { href: "#corner/log?item=" + entry.item_type + ":" + entry.item_id }, "History of this item")) : null))),
+    body);
+}
+
+// The fields of a saved row, in the page's order, with their labels.
+function logFields(def, ...rows) {
+  const known = def ? def.fields.filter(f => f.name && !f.compute) : [];
+  const keys = [...new Set(rows.flatMap(r => Object.keys(r || {})))].filter(k => k !== "id");
+  const label = k => ((known.find(f => f.name === k) || {}).label || k.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()))
+    .replace(/\s*\(.*\)$/, "");                      // "Card text (the guide explains…)" -> "Card text"
+  const order = k => { const i = known.findIndex(f => f.name === k); return i === -1 ? 99 : i; };
+  return keys.sort((a, b) => order(a) - order(b)).map(k => ({ key: k, label: label(k), field: known.find(f => f.name === k) || { name: k } }));
+}
+
+function logValue(field, value) {
+  if (value === null || value === undefined || value === "") return "(empty)";
+  if (field.type === "yesno" || typeof value === "boolean") return value ? "Yes" : "No";
+  if (field.type === "volunteer") { const p = names.find(x => x.id === value); return p ? p.name : "Former volunteer"; }
+  if (field.type === "date") return show(field, { [field.name]: value });
+  if (field.type === "datetime") return new Date(value).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+function valueList(def, row) {
+  return el("dl", { className: "log-values" }, logFields(def, row).map(f =>
+    [el("dt", {}, f.label), el("dd", {}, logValue(f.field, row[f.key]))]));
+}
+
+// Before and after, side by side, only for the fields that changed.
+function changeTable(def, oldRow, newRow) {
+  const changed = logFields(def, oldRow, newRow).filter(f => JSON.stringify(oldRow[f.key]) !== JSON.stringify(newRow[f.key]));
+  return el("div", { className: "log-changes" }, changed.map(f => {
+    const [before, after] = diffText(logValue(f.field, oldRow[f.key]), logValue(f.field, newRow[f.key]));
+    return el("div", { className: "change" },
+      el("span", { className: "field-label" }, f.label),
+      el("div", { className: "diff" },
+        el("div", { className: "diff-side before" }, el("span", { className: "diff-head" }, "Before"), el("p", {}, before)),
+        el("div", { className: "diff-side after" }, el("span", { className: "diff-head" }, "After"), el("p", {}, after))));
+  }));
+}
+
+// Marks the words that were removed (before) and added (after).
+function diffText(a, b) {
+  const split = text => text.split(/(\s+)/).filter(Boolean);
+  const A = split(a), B = split(b);
+  let start = 0;
+  while (start < A.length && start < B.length && A[start] === B[start]) start++;
+  let endA = A.length, endB = B.length;
+  while (endA > start && endB > start && A[endA - 1] === B[endB - 1]) { endA--; endB--; }
+  const midA = A.slice(start, endA), midB = B.slice(start, endB);
+  const keepA = new Array(midA.length).fill(false), keepB = new Array(midB.length).fill(false);
+  if (midA.length * midB.length <= 250000) {            // longest common words, for a tidy highlight
+    const w = midB.length + 1, table = new Uint16Array((midA.length + 1) * w);
+    for (let i = midA.length - 1; i >= 0; i--)
+      for (let j = midB.length - 1; j >= 0; j--)
+        table[i * w + j] = midA[i] === midB[j] ? table[(i + 1) * w + j + 1] + 1 : Math.max(table[(i + 1) * w + j], table[i * w + j + 1]);
+    for (let i = 0, j = 0; i < midA.length && j < midB.length;) {
+      if (midA[i] === midB[j]) { keepA[i++] = true; keepB[j++] = true; }
+      else if (table[(i + 1) * w + j] >= table[i * w + j + 1]) i++;
+      else j++;
+    }
+  }
+  const paint = (words, keep, tag) => {
+    const out = [];
+    words.forEach((word, i) => {
+      const plain = keep[i] || !word.trim();
+      const last = out[out.length - 1];
+      if (last && last.plain === plain) last.text += word; else out.push({ plain, text: word });
+    });
+    return out.map(part => part.plain ? part.text : el(tag, {}, part.text));
+  };
+  const same = list => list.join("");
+  return [
+    [same(A.slice(0, start)), ...paint(midA, keepA, "del"), same(A.slice(endA))],
+    [same(B.slice(0, start)), ...paint(midB, keepB, "ins"), same(B.slice(endB))],
+  ];
+}
+
+// Entries from before last school year: download them, then remove them.
+function oldEntriesBox(count) {
+  const cutoff = logCutoff();
+  const cutoffText = shortDate(cutoff);
+  let saved = false;
+  const remove = el("button", { className: "sm danger", disabled: true }, "Remove them");
+  const download = el("button", { className: "sm go" }, "Download spreadsheet");
+  download.onclick = async () => {
+    download.disabled = true;
+    try {
+      let rows = [], offset = 0, page;
+      do {
+        page = await api("GET", "activity_log?select=" + LOG_COLUMNS + "&at=lt." + encodeURIComponent(cutoff.toISOString()) + "&order=at.asc,id.asc&limit=1000&offset=" + offset);
+        rows = rows.concat(page); offset += 1000;
+      } while (page.length === 1000);
+      const cell = v => '"' + String(v === null || v === undefined ? "" : v).replace(/"/g, '""') + '"';
+      const lines = [["When", "Who", "Action", "Detail", "Type of item", "Item", "Before", "After"].map(cell).join(",")]
+        .concat(rows.map(e => [new Date(e.at).toLocaleString("en-CA"), e.actor_name, e.action, e.detail, e.item_type, e.item_label,
+          e.old_row ? JSON.stringify(e.old_row) : "", e.new_row ? JSON.stringify(e.new_row) : ""].map(cell).join(",")));
+      const link = el("a", {
+        href: URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" })),
+        download: "AVP Hub activity log before " + cutoff.toLocaleDateString("en-CA") + ".csv",
+      });
+      document.body.append(link); link.click(); link.remove();
+      saved = true; remove.disabled = false;
+    } catch (err) { alert(err.message); }
+    download.disabled = false;
+  };
+  remove.onclick = async () => {
+    if (!saved || !confirm("Remove " + count + " log entries from before " + cutoffText + "?\n\nMake sure the spreadsheet is saved somewhere safe first. This cannot be undone.")) return;
+    try {
+      const removed = await api("POST", "rpc/remove_old_activity", {});
+      alert("Removed " + removed + " old entries. The clean-up itself is now in the log.");
+      route();
+    } catch (err) { alert(err.message); }
+  };
+  return el("section", { className: "panel note-panel" },
+    el("h2", {}, count + " entries are from before " + cutoffText),
+    el("p", {}, "The log keeps this school year and last year. Download the older entries as a spreadsheet and save it on the office shared drive, then remove them from the hub to keep the free database small."),
+    el("div", { className: "row" }, download, remove));
 }
 
 // The little calendar square beside a dated item.
@@ -1162,7 +1441,7 @@ function drawTable(def, rows) {
     el("thead", {}, el("tr", {}, def.fields.map(f => el("th", {}, f.label)), el("th", {}))),
     el("tbody", {}, rows.map(row =>
       el("tr", { className: def.flag && def.flag(row) ? "flag" : "" },
-        def.fields.map(f => el("td", {}, show(f, row))),
+        def.fields.map(f => el("td", {}, f.link && isCoordinator() ? el("a", { href: f.link(row) }, show(f, row)) : show(f, row))),
         el("td", {}, rowButtons(def, row)))))));
 }
 
@@ -1208,7 +1487,21 @@ function rowButtons(def, row) {
         change(() => api("DELETE", def.table + "?id=eq." + row.id));
     } }, "Delete"));
   }
-  return buttons.length ? el("div", { className: "row actions" }, buttons) : "";
+  return [editedLine(def, row), buttons.length ? el("div", { className: "row actions" }, buttons) : ""];
+}
+
+// "Last edited by Sam on Nov 17, 2026 · See history" under an item.
+function editedLine(def, row) {
+  const type = def.table === "volunteer_names" ? "volunteers" : def.table;
+  if (!type || row.id === undefined || row.id === null) return "";
+  const last = lastEdits.get(type + ":" + row.id);
+  const history = isCoordinator() && el("a", { href: "#corner/log?item=" + type + ":" + row.id }, "See history");
+  if (!last && !history) return "";
+  const verb = !last ? "" : last.detail === "confirmed the date of" ? "Date confirmed"
+    : last.detail ? last.detail[0].toUpperCase() + last.detail.slice(1)
+    : last.action === "added" ? "Added" : "Last edited";
+  return el("div", { className: "edit-meta small muted" },
+    last ? verb + " by " + last.actor_name + " on " + shortDate(last.at) : "", last && history ? " · " : "", history);
 }
 
 // Make a change, then redraw the page. Problems are shown in a pop-up.
