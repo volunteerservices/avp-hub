@@ -357,3 +357,39 @@ create policy "coordinator changes" on howto_cards for all to authenticated
 
 revoke all on howto_cards from anon, public;
 grant select, insert, update, delete on howto_cards to authenticated;
+
+-- ---------------------------------------------------------------
+-- 8. COORDINATOR CORNER (coordinator only)
+--    The website manual, the "about this website" guide and the
+--    coordinator's reminders. Volunteers cannot read or change any
+--    of it: every rule below asks is_coordinator().
+--    The text itself is private content and is not in this file.
+-- ---------------------------------------------------------------
+
+create table corner_pages (
+  id           bigint generated always as identity primary key,
+  part         text not null check (part in ('Website manual', 'About this website')),
+  position     integer not null default 0,        -- place in the list, 1 is first
+  title        text not null,
+  body         text not null,                     -- same layout marks as the how-to cards
+  last_updated date
+);
+
+create table reminders (
+  id             bigint generated always as identity primary key,
+  title          text not null,
+  notes          text not null default '',
+  due_date       date not null,
+  repeats        text not null default 'yearly' check (repeats in ('daily', 'weekly', 'monthly', 'yearly')),
+  date_confirmed boolean not null default false   -- yearly dates: confirmed with the CVS for this year?
+);
+
+alter table corner_pages enable row level security;
+alter table reminders enable row level security;
+create policy "coordinator only" on corner_pages for all to authenticated
+  using (is_coordinator()) with check (is_coordinator());
+create policy "coordinator only" on reminders for all to authenticated
+  using (is_coordinator()) with check (is_coordinator());
+
+revoke all on corner_pages, reminders from anon, public;
+grant select, insert, update, delete on corner_pages, reminders to authenticated;

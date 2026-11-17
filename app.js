@@ -36,6 +36,7 @@ const ICONS = {
   alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/>',
   leaf: '<path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19 12 12"/>',
   bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l3 3M13.5 9.5l2 2"/>',
   pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   tick: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
@@ -260,6 +261,39 @@ const PAGES = {
         } },
     ],
   },
+
+  corner: {                                 // coordinator only; drawn by drawCorner()
+    title: "Coordinator Corner", icon: "key", coordinatorOnly: true,
+    lede: "For the coordinator only. Volunteers cannot see this page, and the database refuses to show it to them.",
+  },
+};
+
+// Coordinator Corner has three parts. The manual and the "about" guide are
+// sections of text; the reminders are the coordinator's recurring jobs.
+const CORNER_PARTS = { manual: "Website manual", reminders: "Reminders", about: "About this website" };
+const CORNER_PAGES = {
+  singular: "section", table: "corner_pages", order: "position.asc,title.asc", reminder: true,
+  fields: [
+    { name: "title", label: "Title", type: "text", required: true },
+    { name: "part", label: "Which part it belongs to", type: "choice", options: [CORNER_PARTS.manual, CORNER_PARTS.about],
+      initial: () => location.hash.includes("/about") ? CORNER_PARTS.about : CORNER_PARTS.manual },
+    { name: "position", label: "Place in the list (1 is first)", type: "number" },
+    { name: "body", label: "Text (same layout marks as the How To cards)", type: "longtext", required: true },
+    { name: "last_updated", label: "Last updated", type: "date", initial: today },
+  ],
+};
+const REMINDERS = {
+  singular: "reminder", table: "reminders", order: "due_date.asc,title.asc",
+  // A yearly date stays "based on last year" until the coordinator confirms it.
+  actions: row => row.repeats === "yearly" && !row.date_confirmed
+    ? [{ label: "Date confirmed", patch: { date_confirmed: true } }] : [],
+  fields: [
+    { name: "title", label: "What to do", type: "text", required: true },
+    { name: "notes", label: "Notes", type: "longtext" },
+    { name: "due_date", label: "Due date", type: "date", required: true, initial: today },
+    { name: "repeats", label: "Repeats", type: "choice", options: ["daily", "weekly", "monthly", "yearly"] },
+    { name: "date_confirmed", label: "Date confirmed with the CVS for this year", type: "yesno" },
+  ],
 };
 
 // What volunteers (not the coordinator) see on the Volunteers page: names only.
@@ -625,22 +659,23 @@ async function loadLookups() {
 
 function currentPage() {
   const key = location.hash.slice(1).split("/")[0];   // "#howto/3" is still the How To page
-  return PAGES[key] ? key : "today";
+  return PAGES[key] && (!PAGES[key].coordinatorOnly || isCoordinator()) ? key : "today";
 }
 
 async function route() {
   if (!me) return;
   document.body.classList.remove("signed-out", "welcome");
   const key = currentPage();
-  $("nav").replaceChildren(...Object.keys(PAGES).flatMap(k => [
+  $("nav").replaceChildren(...Object.keys(PAGES).filter(k => !PAGES[k].coordinatorOnly || isCoordinator()).flatMap(k => [
     PAGES[k].group && el("div", { className: "navgroup" }, PAGES[k].group),
     el("a", { href: "#" + k, ariaCurrent: k === key ? "page" : null }, icon(PAGES[k].icon), PAGES[k].title),
   ]).filter(Boolean));
   document.title = PAGES[key].title + " · AVP Hub";
 
   const def = key === "volunteers" && !isCoordinator() ? VOLUNTEER_NAMES : PAGES[key];
-  const cardId = key === "howto" ? location.hash.split("/")[1] || "" : "";   // one open how-to card
-  const view = cardId ? key + "/" + cardId : key;
+  const sub = location.hash.slice(1).split("/")[1] || "";   // "#howto/3" or "#corner/reminders"
+  const cardId = key === "howto" ? sub : "";                // one open how-to card
+  const view = sub ? key + "/" + sub : key;
   const head = key === "today" ? todayHead()
     : cardId ? el("a", { className: "back", href: "#howto" }, "← All how-to cards")
     : el("div", { className: "head" }, el("h1", {}, def.title), el("p", { className: "lede" }, def.lede));
@@ -654,9 +689,10 @@ async function route() {
   try {
     const content = key === "today" ? await drawToday()
       : key === "howto" ? await drawHowTo(def, cardId)
+      : key === "corner" ? await drawCorner(sub)
       : key === "events" ? await drawEvents() : await drawPage(key, def);
     if (key !== currentPage()) return;          // they moved on while it loaded
-    if (key === "howto" && (location.hash.split("/")[1] || "") !== cardId) return;
+    if ((location.hash.slice(1).split("/")[1] || "") !== sub) return;
     main.replaceChildren(head, ...content);
   } catch (err) {
     if (!session) return renderSignIn("signin", err.message);
@@ -709,6 +745,12 @@ async function drawToday() {
   ].sort((a, b) => a.date.localeCompare(b.date));
   const mine = tasks.filter(t => t.claimed_by === me.id).length;
 
+  // Coordinator only: reminders that are overdue or due in the next 7 days.
+  const dueSoon = isCoordinator()
+    ? (await api("GET", "reminders?select=*&due_date=lte." + daysFromNow(6) + "&order=due_date.asc,title.asc"))
+        .filter(r => r.due_date <= daysFromNow(6))
+    : [];
+
   const stat = (iconName, number, label, sub, href, isUrgent) =>
     el("a", { className: "stat" + (isUrgent ? " urgent" : ""), href },
       el("div", { className: "bubble" }, icon(iconName)),
@@ -720,6 +762,8 @@ async function drawToday() {
       el("div", { className: "panel-head" }, el("h2", {}, title), el("a", { href }, linkText)), body);
 
   return [
+    ...(dueSoon.length ? [panel("Your reminders", "All reminders", "#corner/reminders",
+      el("div", { className: "items" }, dueSoon.map(r => reminderRow(r, true))))] : []),
     el("div", { className: "stats" },
       stat("check", tasks.length, "Open tasks",
         mine ? mine + " claimed by you" : "None claimed by you yet", "#tasks"),
@@ -849,6 +893,7 @@ function cardLine(text) {
 // Turns a card's text into page pieces. The layout marks, one per line start:
 //   # Big heading          ## SMALL HEADING        1. A numbered step
 //   - A bullet             > A highlighted box     | a | b |  a table row
+//   => box => box          boxes joined by arrows (a simple diagram)
 // A row of dashes (|---|---|) under a table's first row makes that row the headings.
 // Lines right under a step (no empty line between) belong to that step.
 function cardBody(text) {
@@ -873,6 +918,11 @@ function cardBody(text) {
     else if (starts(line, ">")) {
       out.push(el("div", { className: "howto-box" }, cardBody(take(l => starts(l, ">")).map(l => l.replace(/^> ?/, "")).join("\n"))));
     }
+    else if (starts(line, "=> ")) {
+      out.push(el("div", { className: "flow" }, line.slice(3).split(" => ").flatMap((box, b) =>
+        [b ? el("span", { className: "arrow", ariaHidden: "true" }, "→") : null, el("span", { className: "box" }, cardLine(box))])));
+      i++;
+    }
     else if (starts(line, "- ")) {
       out.push(el("ul", {}, take(l => starts(l, "- ")).map(l => el("li", {}, cardLine(l.slice(2))))));
     }
@@ -889,10 +939,94 @@ function cardBody(text) {
         })))))));
     }
     else {
-      out.push(el("p", {}, cardLine(take(l => l.trim() && !isStep(l) && !/^(#{1,2} |>|- |\|)/.test(l)).join(" "))));
+      out.push(el("p", {}, cardLine(take(l => l.trim() && !isStep(l) && !/^(#{1,2} |>|- |=> |\|)/.test(l)).join(" "))));
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------
+// Coordinator Corner: website manual, reminders, about this website.
+// ---------------------------------------------------------------------
+
+const daysFromNow = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("en-CA"); };
+
+async function drawCorner(sub) {
+  const tab = CORNER_PARTS[sub] ? sub : "manual";
+  const tabs = el("div", { className: "tabs" }, Object.keys(CORNER_PARTS).map(k =>
+    el("a", { href: "#corner/" + k, ariaCurrent: k === tab ? "page" : null }, CORNER_PARTS[k])));
+  if (tab === "reminders") return [tabs, ...await drawReminders()];
+
+  const def = CORNER_PAGES;
+  const rows = (await api("GET", def.table + "?select=*&part=eq." + encodeURIComponent(CORNER_PARTS[tab]) + "&order=" + def.order))
+    .filter(row => row.part === CORNER_PARTS[tab]);
+  return [tabs,
+    el("div", { className: "row toolbar" },
+      el("button", { className: "primary", onclick: () => openForm(def) }, icon("plus"), "Add section")),
+    rows.length
+      ? el("div", { className: "grid" }, rows.map(row =>
+          el("details", {},
+            el("summary", {}, el("span", {}, row.title)),
+            el("div", { className: "body corner-text" }, cardBody(row.body || ""),
+              row.last_updated && el("p", { className: "small muted" }, "Last updated " + show(def.fields[4], row)),
+              rowButtons(def, row)))))
+      : emptyState("key", "Nothing written here yet."),
+  ];
+}
+
+// The date a reminder moves to when it is ticked off: the next day, week,
+// month or year after its due date that is still ahead of today.
+function nextDue(reminder) {
+  const d = new Date(reminder.due_date + "T00:00"), now = new Date(today() + "T00:00");
+  do {
+    if (reminder.repeats === "daily") d.setDate(d.getDate() + 1);
+    else if (reminder.repeats === "weekly") d.setDate(d.getDate() + 7);
+    else if (reminder.repeats === "monthly") d.setMonth(d.getMonth() + 1);
+    else d.setFullYear(d.getFullYear() + 1);
+  } while (d <= now);
+  if (reminder.repeats === "daily") while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);   // skip weekends
+  return d.toLocaleDateString("en-CA");
+}
+
+// One reminder, with its tick. "compact" (on the Today page) leaves out Edit and Delete.
+function reminderRow(reminder, compact) {
+  const late = reminder.due_date < today();
+  const unconfirmed = reminder.repeats === "yearly" && !reminder.date_confirmed;
+  return el("div", { className: "item" },
+    el("button", { className: "tick tick-button", title: "Done: schedule the next one", ariaLabel: "Done: " + reminder.title,
+      onclick: () => change(() => api("PATCH", REMINDERS.table + "?id=eq." + reminder.id,
+        { due_date: nextDue(reminder), ...(reminder.repeats === "yearly" ? { date_confirmed: false } : {}) })) },
+      icon("tick")),
+    el("div", { className: "text" }, el("span", {}, reminder.title),
+      el("span", { className: "small muted" },
+        (late ? "Was due " : "Due ") + show(REMINDERS.fields[2], reminder) + " · repeats " + reminder.repeats),
+      !compact && reminder.notes && el("span", { className: "small muted" }, reminder.notes),
+      unconfirmed && el("span", { className: "small unconfirmed" }, "Based on last year's dates, confirm with the CVS")),
+    late && el("span", { className: "chip urgent" }, "Overdue"),
+    !compact && rowButtons(REMINDERS, reminder));
+}
+
+async function drawReminders() {
+  const def = REMINDERS;
+  const rows = await api("GET", def.table + "?select=*&order=" + def.order);
+  rows.sort((a, b) => a.due_date.localeCompare(b.due_date) || a.title.localeCompare(b.title));
+  const day = today(), soon = daysFromNow(6);
+  const groups = [
+    ["Overdue", rows.filter(r => r.due_date < day)],
+    ["Due this week", rows.filter(r => r.due_date >= day && r.due_date <= soon)],
+    ["Coming up", rows.filter(r => r.due_date > soon)],
+  ];
+  return [
+    el("p", { className: "lede" }, "Tick a reminder when it is done and it moves to its next date by itself. Overdue and due-this-week reminders also show at the top of your Today page."),
+    el("div", { className: "row toolbar" },
+      el("button", { className: "primary", onclick: () => openForm(def) }, icon("plus"), "Add reminder")),
+    rows.length
+      ? el("div", { className: "grid" }, groups.filter(([, list]) => list.length).map(([title, list]) =>
+          el("section", { className: "panel" },
+            el("div", { className: "panel-head" }, el("h2", {}, title), el("span", { className: "count" }, String(list.length))),
+            el("div", { className: "items" }, list.map(r => reminderRow(r))))))
+      : emptyState("key", "No reminders yet."),
+  ];
 }
 
 // The little calendar square beside a dated item.

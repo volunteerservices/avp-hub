@@ -32,6 +32,22 @@ Keep their passwords in the office's usual password storage, not in AVP Hub.
 
 The coordinator can add, edit and delete everything.
 
+## Coordinator Corner
+
+The full, up-to-date coordinator manual now lives on the website itself: sign in as the
+coordinator and open **Coordinator Corner** (last item in the menu). It has three tabs:
+
+- **Website manual:** step-by-step instructions for every everyday job.
+- **Reminders:** recurring jobs with due dates. Tick one and it moves to its next date.
+  Overdue and due-this-week reminders also show at the top of the coordinator's Today page.
+- **About this website:** how the services connect, the free-plan rules (checked
+  November 16, 2026), summer, backups, costs, accounts and troubleshooting.
+
+Volunteers cannot see Coordinator Corner, and the database refuses to give its contents
+to anyone but the coordinator. Its text is stored in the database, not in these public
+files. A private copy for rebuilding is in `private-content/corner-content.sql` on the
+computer used to build the site.
+
 ## How To cards
 
 The How To page holds the how-to cards from the front desk binder. Volunteers pick a
